@@ -1,0 +1,17 @@
+# CMake build directory
+build/
+
+# Compiled object files
+*.o
+*.obj
+
+# Executables
+*.exe
+*.out
+
+# macOS
+.DS_Store
+
+# IDE/editor files
+.vscode/
+.idea/
