@@ -9,3 +9,13 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Header files location
 include_directories(${CMAKE_SOURCE_DIR}/include)
+
+# ---- Core DPI types ----
+add_library(dpi_types
+    src/types.cpp
+)
+
+target_include_directories(dpi_types
+    PUBLIC
+        ${CMAKE_SOURCE_DIR}/include
+)
