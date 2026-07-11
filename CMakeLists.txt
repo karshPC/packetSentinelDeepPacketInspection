@@ -19,3 +19,13 @@ target_include_directories(dpi_types
     PUBLIC
         ${CMAKE_SOURCE_DIR}/include
 )
+
+# ---- PCAP reader ----
+add_library(pcap_reader
+    src/pcap_reader.cpp
+)
+
+target_include_directories(pcap_reader
+    PUBLIC
+        ${CMAKE_SOURCE_DIR}/include
+)
