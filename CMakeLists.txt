@@ -29,3 +29,13 @@ target_include_directories(pcap_reader
     PUBLIC
         ${CMAKE_SOURCE_DIR}/include
 )
+
+# ---- PCAP reader test ----
+add_executable(pcap_reader_test
+    tests/pcap_reader_test.cpp
+)
+
+target_link_libraries(pcap_reader_test
+    PRIVATE
+        pcap_reader
+)
