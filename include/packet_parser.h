@@ -27,6 +27,19 @@ struct IPv4Header {
     uint32_t dst_ip;
 };
 
+// TCP header
+struct TCPHeader {
+    uint16_t src_port;
+    uint16_t dst_port;
+    uint32_t sequence_number;
+    uint32_t acknowledgement_number;
+    uint8_t data_offset_reserved;
+    uint8_t flags;
+    uint16_t window;
+    uint16_t checksum;
+    uint16_t urgent_pointer;
+};
+
 // Result of packet parsing
 struct ParsedPacket {
     bool valid = false;
@@ -36,10 +49,18 @@ struct ParsedPacket {
 
     const EthernetHeader* ethernet = nullptr;
     const IPv4Header* ipv4 = nullptr;
+    const TCPHeader* tcp = nullptr;
 
     uint16_t ether_type = 0;
 
     size_t ip_header_length = 0;
+    size_t tcp_header_length = 0;
+
+    uint16_t src_port = 0;
+    uint16_t dst_port = 0;
+
+    const uint8_t* payload = nullptr;
+    size_t payload_length = 0;
 };
 
 // Parser for raw Ethernet packets
