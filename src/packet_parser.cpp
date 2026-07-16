@@ -8,6 +8,7 @@ constexpr size_t ETHERNET_HEADER_SIZE = 14;
 constexpr uint16_t ETHERTYPE_IPV4 = 0x0800;
 
 constexpr uint8_t IP_PROTOCOL_TCP = 6;
+constexpr uint8_t IP_PROTOCOL_UDP = 17;
 
 uint16_t read16(const uint8_t* data) {
     return static_cast<uint16_t>(
@@ -84,60 +85,118 @@ ParsedPacket PacketParser::parse(
         return packet;
     }
 
-    // Only TCP is handled at this stage.
-    if (packet.ipv4->protocol != IP_PROTOCOL_TCP) {
-        packet.valid = true;
-        return packet;
-    }
-
-    const size_t tcp_offset =
+    const size_t transport_offset =
         ETHERNET_HEADER_SIZE +
         packet.ip_header_length;
 
-    constexpr size_t MIN_TCP_HEADER_SIZE = 20;
+    // ================================================================
+    // TCP
+    // ================================================================
 
-    if (length < tcp_offset + MIN_TCP_HEADER_SIZE) {
+    if (packet.ipv4->protocol == IP_PROTOCOL_TCP) {
+
+        constexpr size_t MIN_TCP_HEADER_SIZE = 20;
+
+        if (length <
+            transport_offset +
+            MIN_TCP_HEADER_SIZE) {
+            return packet;
+        }
+
+        const uint8_t* tcp_data =
+            data + transport_offset;
+
+        packet.tcp =
+            reinterpret_cast<const TCPHeader*>(tcp_data);
+
+        packet.src_port =
+            read16(tcp_data);
+
+        packet.dst_port =
+            read16(tcp_data + 2);
+
+        const uint8_t data_offset =
+            (tcp_data[12] >> 4) & 0x0F;
+
+        if (data_offset < 5) {
+            return packet;
+        }
+
+        packet.transport_header_length =
+            static_cast<size_t>(data_offset) * 4;
+
+        if (length <
+            transport_offset +
+            packet.transport_header_length) {
+            return packet;
+        }
+
+        packet.payload =
+            data +
+            transport_offset +
+            packet.transport_header_length;
+
+        packet.payload_length =
+            length -
+            transport_offset -
+            packet.transport_header_length;
+
+        packet.valid = true;
+
         return packet;
     }
 
-    const uint8_t* tcp_data =
-        data + tcp_offset;
+    // ================================================================
+    // UDP
+    // ================================================================
 
-    packet.tcp =
-        reinterpret_cast<const TCPHeader*>(tcp_data);
+    if (packet.ipv4->protocol == IP_PROTOCOL_UDP) {
 
-    packet.src_port =
-        read16(tcp_data);
+        constexpr size_t UDP_HEADER_SIZE = 8;
 
-    packet.dst_port =
-        read16(tcp_data + 2);
+        if (length <
+            transport_offset +
+            UDP_HEADER_SIZE) {
+            return packet;
+        }
 
-    const uint8_t data_offset =
-        (tcp_data[12] >> 4) & 0x0F;
+        const uint8_t* udp_data =
+            data + transport_offset;
 
-    if (data_offset < 5) {
+        packet.udp =
+            reinterpret_cast<const UDPHeader*>(udp_data);
+
+        packet.src_port =
+            read16(udp_data);
+
+        packet.dst_port =
+            read16(udp_data + 2);
+
+        packet.transport_header_length =
+            UDP_HEADER_SIZE;
+
+        if (length <
+            transport_offset +
+            UDP_HEADER_SIZE) {
+            return packet;
+        }
+
+        packet.payload =
+            data +
+            transport_offset +
+            UDP_HEADER_SIZE;
+
+        packet.payload_length =
+            length -
+            transport_offset -
+            UDP_HEADER_SIZE;
+
+        packet.valid = true;
+
         return packet;
     }
 
-    packet.tcp_header_length =
-        static_cast<size_t>(data_offset) * 4;
-
-    if (length <
-        tcp_offset +
-        packet.tcp_header_length) {
-        return packet;
-    }
-
-    packet.payload =
-        data +
-        tcp_offset +
-        packet.tcp_header_length;
-
-    packet.payload_length =
-        length -
-        tcp_offset -
-        packet.tcp_header_length;
-
+    // Other IPv4 protocol.
     packet.valid = true;
 
     return packet;

@@ -40,6 +40,14 @@ struct TCPHeader {
     uint16_t urgent_pointer;
 };
 
+// UDP header
+struct UDPHeader {
+    uint16_t src_port;
+    uint16_t dst_port;
+    uint16_t length;
+    uint16_t checksum;
+};
+
 // Result of packet parsing
 struct ParsedPacket {
     bool valid = false;
@@ -50,11 +58,12 @@ struct ParsedPacket {
     const EthernetHeader* ethernet = nullptr;
     const IPv4Header* ipv4 = nullptr;
     const TCPHeader* tcp = nullptr;
+    const UDPHeader* udp = nullptr;
 
     uint16_t ether_type = 0;
 
     size_t ip_header_length = 0;
-    size_t tcp_header_length = 0;
+    size_t transport_header_length = 0;
 
     uint16_t src_port = 0;
     uint16_t dst_port = 0;
