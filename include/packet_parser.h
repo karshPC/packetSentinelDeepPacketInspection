@@ -6,14 +6,12 @@
 
 namespace PacketAnalyzer {
 
-// Ethernet header
 struct EthernetHeader {
     uint8_t dst_mac[6];
     uint8_t src_mac[6];
     uint16_t ether_type;
 };
 
-// IPv4 header
 struct IPv4Header {
     uint8_t version_ihl;
     uint8_t tos;
@@ -27,7 +25,6 @@ struct IPv4Header {
     uint32_t dst_ip;
 };
 
-// TCP header
 struct TCPHeader {
     uint16_t src_port;
     uint16_t dst_port;
@@ -40,7 +37,6 @@ struct TCPHeader {
     uint16_t urgent_pointer;
 };
 
-// UDP header
 struct UDPHeader {
     uint16_t src_port;
     uint16_t dst_port;
@@ -48,7 +44,6 @@ struct UDPHeader {
     uint16_t checksum;
 };
 
-// Result of packet parsing
 struct ParsedPacket {
     bool valid = false;
 
@@ -61,6 +56,12 @@ struct ParsedPacket {
     const UDPHeader* udp = nullptr;
 
     uint16_t ether_type = 0;
+    uint8_t protocol = 0;
+
+    size_t eth_offset = 0;
+    size_t ip_offset = 0;
+    size_t transport_offset = 0;
+    size_t payload_offset = 0;
 
     size_t ip_header_length = 0;
     size_t transport_header_length = 0;
@@ -68,11 +69,12 @@ struct ParsedPacket {
     uint16_t src_port = 0;
     uint16_t dst_port = 0;
 
+    uint8_t tcp_flags = 0;
+
     const uint8_t* payload = nullptr;
     size_t payload_length = 0;
 };
 
-// Parser for raw Ethernet packets
 class PacketParser {
 public:
     static ParsedPacket parse(

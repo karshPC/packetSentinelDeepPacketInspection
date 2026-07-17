@@ -17,14 +17,6 @@ uint16_t read16(const uint8_t* data) {
     );
 }
 
-uint32_t read32(const uint8_t* data) {
-    return
-        (static_cast<uint32_t>(data[0]) << 24) |
-        (static_cast<uint32_t>(data[1]) << 16) |
-        (static_cast<uint32_t>(data[2]) << 8) |
-        static_cast<uint32_t>(data[3]);
-}
-
 } // namespace
 
 ParsedPacket PacketParser::parse(
@@ -40,6 +32,7 @@ ParsedPacket PacketParser::parse(
 
     packet.data = data;
     packet.length = length;
+    packet.eth_offset = 0;
 
     packet.ethernet =
         reinterpret_cast<const EthernetHeader*>(data);
@@ -54,14 +47,16 @@ ParsedPacket PacketParser::parse(
 
     constexpr size_t MIN_IPV4_HEADER_SIZE = 20;
 
+    packet.ip_offset = ETHERNET_HEADER_SIZE;
+
     if (length <
-        ETHERNET_HEADER_SIZE +
+        packet.ip_offset +
         MIN_IPV4_HEADER_SIZE) {
         return packet;
     }
 
     const uint8_t* ip_data =
-        data + ETHERNET_HEADER_SIZE;
+        data + packet.ip_offset;
 
     packet.ipv4 =
         reinterpret_cast<const IPv4Header*>(ip_data);
@@ -80,31 +75,34 @@ ParsedPacket PacketParser::parse(
         static_cast<size_t>(ihl) * 4;
 
     if (length <
-        ETHERNET_HEADER_SIZE +
+        packet.ip_offset +
         packet.ip_header_length) {
         return packet;
     }
 
-    const size_t transport_offset =
-        ETHERNET_HEADER_SIZE +
+    packet.protocol =
+        packet.ipv4->protocol;
+
+    packet.transport_offset =
+        packet.ip_offset +
         packet.ip_header_length;
 
     // ================================================================
     // TCP
     // ================================================================
 
-    if (packet.ipv4->protocol == IP_PROTOCOL_TCP) {
+    if (packet.protocol == IP_PROTOCOL_TCP) {
 
         constexpr size_t MIN_TCP_HEADER_SIZE = 20;
 
         if (length <
-            transport_offset +
+            packet.transport_offset +
             MIN_TCP_HEADER_SIZE) {
             return packet;
         }
 
         const uint8_t* tcp_data =
-            data + transport_offset;
+            data + packet.transport_offset;
 
         packet.tcp =
             reinterpret_cast<const TCPHeader*>(tcp_data);
@@ -126,20 +124,23 @@ ParsedPacket PacketParser::parse(
             static_cast<size_t>(data_offset) * 4;
 
         if (length <
-            transport_offset +
+            packet.transport_offset +
             packet.transport_header_length) {
             return packet;
         }
 
-        packet.payload =
-            data +
-            transport_offset +
+        packet.tcp_flags =
+            tcp_data[13];
+
+        packet.payload_offset =
+            packet.transport_offset +
             packet.transport_header_length;
 
+        packet.payload =
+            data + packet.payload_offset;
+
         packet.payload_length =
-            length -
-            transport_offset -
-            packet.transport_header_length;
+            length - packet.payload_offset;
 
         packet.valid = true;
 
@@ -150,18 +151,18 @@ ParsedPacket PacketParser::parse(
     // UDP
     // ================================================================
 
-    if (packet.ipv4->protocol == IP_PROTOCOL_UDP) {
+    if (packet.protocol == IP_PROTOCOL_UDP) {
 
         constexpr size_t UDP_HEADER_SIZE = 8;
 
         if (length <
-            transport_offset +
+            packet.transport_offset +
             UDP_HEADER_SIZE) {
             return packet;
         }
 
         const uint8_t* udp_data =
-            data + transport_offset;
+            data + packet.transport_offset;
 
         packet.udp =
             reinterpret_cast<const UDPHeader*>(udp_data);
@@ -175,28 +176,21 @@ ParsedPacket PacketParser::parse(
         packet.transport_header_length =
             UDP_HEADER_SIZE;
 
-        if (length <
-            transport_offset +
-            UDP_HEADER_SIZE) {
-            return packet;
-        }
+        packet.payload_offset =
+            packet.transport_offset +
+            UDP_HEADER_SIZE;
 
         packet.payload =
-            data +
-            transport_offset +
-            UDP_HEADER_SIZE;
+            data + packet.payload_offset;
 
         packet.payload_length =
-            length -
-            transport_offset -
-            UDP_HEADER_SIZE;
+            length - packet.payload_offset;
 
         packet.valid = true;
 
         return packet;
     }
 
-    // Other IPv4 protocol.
     packet.valid = true;
 
     return packet;
