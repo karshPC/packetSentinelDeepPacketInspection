@@ -49,3 +49,14 @@ target_link_libraries(pcap_reader_test
     PRIVATE
         pcap_reader
 )
+
+# ---- Packet parser test ----
+add_executable(packet_parser_test
+    tests/packet_parser_test.cpp
+)
+
+target_link_libraries(packet_parser_test
+    PRIVATE
+        packet_parser
+        pcap_reader
+)
