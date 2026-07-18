@@ -196,4 +196,32 @@ ParsedPacket PacketParser::parse(
     return packet;
 }
 
+DPI::FiveTuple PacketParser::extractFiveTuple(
+    const ParsedPacket& packet
+) {
+    DPI::FiveTuple tuple{};
+
+    if (!packet.valid ||
+        packet.ipv4 == nullptr) {
+        return tuple;
+    }
+
+    tuple.src_ip =
+        packet.ipv4->src_ip;
+
+    tuple.dst_ip =
+        packet.ipv4->dst_ip;
+
+    tuple.src_port =
+        packet.src_port;
+
+    tuple.dst_port =
+        packet.dst_port;
+
+    tuple.protocol =
+        packet.protocol;
+
+    return tuple;
+}
+
 } // namespace PacketAnalyzer

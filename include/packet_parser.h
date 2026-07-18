@@ -1,6 +1,8 @@
 #ifndef PACKET_PARSER_H
 #define PACKET_PARSER_H
 
+#include "types.h"
+
 #include <cstdint>
 #include <cstddef>
 
@@ -80,6 +82,10 @@ public:
     static ParsedPacket parse(
         const uint8_t* data,
         size_t length
+    );
+
+    static DPI::FiveTuple extractFiveTuple(
+        const ParsedPacket& packet
     );
 };
 

@@ -40,6 +40,11 @@ target_include_directories(packet_parser
         ${CMAKE_SOURCE_DIR}/include
 )
 
+target_link_libraries(packet_parser
+    PUBLIC
+        dpi_types
+)
+
 # ---- PCAP reader test ----
 add_executable(pcap_reader_test
     tests/pcap_reader_test.cpp
