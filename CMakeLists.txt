@@ -65,3 +65,15 @@ target_link_libraries(packet_parser_test
         packet_parser
         pcap_reader
 )
+
+# ---- Five tuple test ----
+add_executable(five_tuple_test
+    tests/five_tuple_test.cpp
+)
+
+target_link_libraries(five_tuple_test
+    PRIVATE
+        packet_parser
+        pcap_reader
+        dpi_types
+)
