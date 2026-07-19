@@ -77,3 +77,14 @@ target_link_libraries(five_tuple_test
         pcap_reader
         dpi_types
 )
+
+# ---- Thread-safe queue test ----
+add_executable(thread_safe_queue_test
+    tests/thread_safe_queue_test.cpp
+
+)
+
+target_link_libraries(thread_safe_queue_test
+    PRIVATE
+        pthread
+)
