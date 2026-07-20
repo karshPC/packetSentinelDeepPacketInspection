@@ -5,9 +5,7 @@
 #include <string>
 #include <functional>
 #include <chrono>
-#include <vector>
 #include <atomic>
-#include <optional>
 
 namespace DPI {
 
@@ -15,11 +13,11 @@ namespace DPI {
 // Five-Tuple: Uniquely identifies a connection/flow
 // ============================================================================
 struct FiveTuple {
-    uint32_t src_ip;
-    uint32_t dst_ip;
-    uint16_t src_port;
-    uint16_t dst_port;
-    uint8_t protocol;  // TCP=6, UDP=17
+    uint32_t src_ip = 0;
+    uint32_t dst_ip = 0;
+    uint16_t src_port = 0;
+    uint16_t dst_port = 0;
+    uint8_t protocol = 0;
 
     bool operator==(const FiveTuple& other) const {
         return src_ip == other.src_ip &&
@@ -121,12 +119,16 @@ enum class PacketAction {
 // ============================================================================
 struct Connection {
     FiveTuple tuple;
+
     ConnectionState state = ConnectionState::NEW;
+
     AppType app_type = AppType::UNKNOWN;
+
     std::string sni;
 
     uint64_t packets_in = 0;
     uint64_t packets_out = 0;
+
     uint64_t bytes_in = 0;
     uint64_t bytes_out = 0;
 
@@ -141,37 +143,19 @@ struct Connection {
 };
 
 // ============================================================================
-// Packet wrapper for queue passing
-// ============================================================================
-struct PacketJob {
-    uint32_t packet_id;
-    FiveTuple tuple;
-    std::vector<uint8_t> data;
-
-    size_t eth_offset = 0;
-    size_t ip_offset = 0;
-    size_t transport_offset = 0;
-    size_t payload_offset = 0;
-    size_t payload_length = 0;
-
-    uint8_t tcp_flags = 0;
-    const uint8_t* payload_data = nullptr;
-
-    uint32_t ts_sec;
-    uint32_t ts_usec;
-};
-
-// ============================================================================
 // DPI Statistics
 // ============================================================================
 struct DPIStats {
     std::atomic<uint64_t> total_packets{0};
     std::atomic<uint64_t> total_bytes{0};
+
     std::atomic<uint64_t> forwarded_packets{0};
     std::atomic<uint64_t> dropped_packets{0};
+
     std::atomic<uint64_t> tcp_packets{0};
     std::atomic<uint64_t> udp_packets{0};
     std::atomic<uint64_t> other_packets{0};
+
     std::atomic<uint64_t> active_connections{0};
 
     DPIStats() = default;

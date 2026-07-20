@@ -45,6 +45,23 @@ target_link_libraries(packet_parser
         dpi_types
 )
 
+# ---- Packet job builder ----
+add_library(packet_job_builder
+    src/packet_job_builder.cpp
+)
+
+target_include_directories(packet_job_builder
+    PUBLIC
+        ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(packet_job_builder
+    PUBLIC
+        packet_parser
+        pcap_reader
+        dpi_types
+)
+
 # ---- PCAP reader test ----
 add_executable(pcap_reader_test
     tests/pcap_reader_test.cpp
@@ -81,10 +98,19 @@ target_link_libraries(five_tuple_test
 # ---- Thread-safe queue test ----
 add_executable(thread_safe_queue_test
     tests/thread_safe_queue_test.cpp
-
 )
 
 target_link_libraries(thread_safe_queue_test
     PRIVATE
         pthread
+)
+
+# ---- Packet job test ----
+add_executable(packet_job_test
+    tests/packet_job_test.cpp
+)
+
+target_link_libraries(packet_job_test
+    PRIVATE
+        packet_job_builder
 )
