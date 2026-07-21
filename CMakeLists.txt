@@ -114,3 +114,17 @@ target_link_libraries(packet_job_test
     PRIVATE
         packet_job_builder
 )
+
+# ---- Packet pipeline test ----
+add_executable(packet_pipeline_test
+    tests/packet_pipeline_test.cpp
+)
+
+target_link_libraries(packet_pipeline_test
+    PRIVATE
+        packet_job_builder
+        packet_parser
+        pcap_reader
+        dpi_types
+        pthread
+)
