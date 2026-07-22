@@ -62,6 +62,21 @@ target_link_libraries(packet_job_builder
         dpi_types
 )
 
+# ---- Connection tracker ----
+add_library(connection_tracker
+    src/connection_tracker.cpp
+)
+
+target_include_directories(connection_tracker
+    PUBLIC
+        ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(connection_tracker
+    PUBLIC
+        dpi_types
+)
+
 # ---- PCAP reader test ----
 add_executable(pcap_reader_test
     tests/pcap_reader_test.cpp
@@ -127,4 +142,15 @@ target_link_libraries(packet_pipeline_test
         pcap_reader
         dpi_types
         pthread
+)
+
+# ---- Connection tracker test ----
+add_executable(connection_tracker_test
+    tests/connection_tracker_test.cpp
+)
+
+target_link_libraries(connection_tracker_test
+    PRIVATE
+        connection_tracker
+        dpi_types
 )
