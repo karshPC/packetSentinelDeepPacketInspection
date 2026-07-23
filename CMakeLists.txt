@@ -7,10 +7,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Header files location
+# Header files
 include_directories(${CMAKE_SOURCE_DIR}/include)
 
-# ---- Core DPI types ----
+# ============================================================
+# Core DPI Types
+# ============================================================
+
 add_library(dpi_types
     src/types.cpp
 )
@@ -20,7 +23,10 @@ target_include_directories(dpi_types
         ${CMAKE_SOURCE_DIR}/include
 )
 
-# ---- PCAP reader ----
+# ============================================================
+# PCAP Reader
+# ============================================================
+
 add_library(pcap_reader
     src/pcap_reader.cpp
 )
@@ -30,7 +36,10 @@ target_include_directories(pcap_reader
         ${CMAKE_SOURCE_DIR}/include
 )
 
-# ---- Packet parser ----
+# ============================================================
+# Packet Parser
+# ============================================================
+
 add_library(packet_parser
     src/packet_parser.cpp
 )
@@ -45,7 +54,10 @@ target_link_libraries(packet_parser
         dpi_types
 )
 
-# ---- Packet job builder ----
+# ============================================================
+# Packet Job Builder
+# ============================================================
+
 add_library(packet_job_builder
     src/packet_job_builder.cpp
 )
@@ -62,7 +74,10 @@ target_link_libraries(packet_job_builder
         dpi_types
 )
 
-# ---- Connection tracker ----
+# ============================================================
+# Connection Tracker
+# ============================================================
+
 add_library(connection_tracker
     src/connection_tracker.cpp
 )
@@ -77,7 +92,29 @@ target_link_libraries(connection_tracker
         dpi_types
 )
 
-# ---- PCAP reader test ----
+# ============================================================
+# Load Balancer
+# ============================================================
+
+add_library(load_balancer
+    src/load_balancer.cpp
+)
+
+target_include_directories(load_balancer
+    PUBLIC
+        ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(load_balancer
+    PUBLIC
+        dpi_types
+        pthread
+)
+
+# ============================================================
+# PCAP Reader Test
+# ============================================================
+
 add_executable(pcap_reader_test
     tests/pcap_reader_test.cpp
 )
@@ -87,7 +124,10 @@ target_link_libraries(pcap_reader_test
         pcap_reader
 )
 
-# ---- Packet parser test ----
+# ============================================================
+# Packet Parser Test
+# ============================================================
+
 add_executable(packet_parser_test
     tests/packet_parser_test.cpp
 )
@@ -98,7 +138,10 @@ target_link_libraries(packet_parser_test
         pcap_reader
 )
 
-# ---- Five tuple test ----
+# ============================================================
+# Five Tuple Test
+# ============================================================
+
 add_executable(five_tuple_test
     tests/five_tuple_test.cpp
 )
@@ -110,7 +153,10 @@ target_link_libraries(five_tuple_test
         dpi_types
 )
 
-# ---- Thread-safe queue test ----
+# ============================================================
+# Thread Safe Queue Test
+# ============================================================
+
 add_executable(thread_safe_queue_test
     tests/thread_safe_queue_test.cpp
 )
@@ -120,7 +166,10 @@ target_link_libraries(thread_safe_queue_test
         pthread
 )
 
-# ---- Packet job test ----
+# ============================================================
+# Packet Job Test
+# ============================================================
+
 add_executable(packet_job_test
     tests/packet_job_test.cpp
 )
@@ -130,7 +179,10 @@ target_link_libraries(packet_job_test
         packet_job_builder
 )
 
-# ---- Packet pipeline test ----
+# ============================================================
+# Packet Pipeline Test
+# ============================================================
+
 add_executable(packet_pipeline_test
     tests/packet_pipeline_test.cpp
 )
@@ -144,7 +196,10 @@ target_link_libraries(packet_pipeline_test
         pthread
 )
 
-# ---- Connection tracker test ----
+# ============================================================
+# Connection Tracker Test
+# ============================================================
+
 add_executable(connection_tracker_test
     tests/connection_tracker_test.cpp
 )
@@ -153,4 +208,19 @@ target_link_libraries(connection_tracker_test
     PRIVATE
         connection_tracker
         dpi_types
+)
+
+# ============================================================
+# Load Balancer Test
+# ============================================================
+
+add_executable(load_balancer_test
+    tests/load_balancer_test.cpp
+)
+
+target_link_libraries(load_balancer_test
+    PRIVATE
+        load_balancer
+        dpi_types
+        pthread
 )
