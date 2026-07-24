@@ -7,8 +7,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# ============================================================
 # Header files
-include_directories(${CMAKE_SOURCE_DIR}/include)
+# ============================================================
+
+include_directories(
+    ${CMAKE_SOURCE_DIR}/include
+)
 
 # ============================================================
 # Core DPI Types
@@ -221,6 +226,24 @@ add_executable(load_balancer_test
 target_link_libraries(load_balancer_test
     PRIVATE
         load_balancer
+        dpi_types
+        pthread
+)
+
+# ============================================================
+# PCAP -> Load Balancer -> FP Test
+# ============================================================
+
+add_executable(pcap_load_balancer_test
+    tests/pcap_load_balancer_test.cpp
+)
+
+target_link_libraries(pcap_load_balancer_test
+    PRIVATE
+        load_balancer
+        packet_job_builder
+        packet_parser
+        pcap_reader
         dpi_types
         pthread
 )
