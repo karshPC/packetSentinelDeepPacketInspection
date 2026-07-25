@@ -117,6 +117,26 @@ target_link_libraries(load_balancer
 )
 
 # ============================================================
+# Fast Path
+# ============================================================
+
+add_library(fast_path
+    src/fast_path.cpp
+)
+
+target_include_directories(fast_path
+    PUBLIC
+        ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(fast_path
+    PUBLIC
+        connection_tracker
+        dpi_types
+        pthread
+)
+
+# ============================================================
 # PCAP Reader Test
 # ============================================================
 
@@ -244,6 +264,22 @@ target_link_libraries(pcap_load_balancer_test
         packet_job_builder
         packet_parser
         pcap_reader
+        dpi_types
+        pthread
+)
+
+# ============================================================
+# Fast Path Test
+# ============================================================
+
+add_executable(fast_path_test
+    tests/fast_path_test.cpp
+)
+
+target_link_libraries(fast_path_test
+    PRIVATE
+        fast_path
+        connection_tracker
         dpi_types
         pthread
 )
