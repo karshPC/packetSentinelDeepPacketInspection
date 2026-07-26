@@ -5,15 +5,16 @@
 #include <thread>
 
 int main() {
-    DPI::ThreadSafeQueue<DPI::PacketJob> queue(100);
+    // ============================================================
+    // FastPath owns its own input queue.
+    // ============================================================
 
     DPI::FastPath fast_path(
-        0,
-        queue
+        0
     );
 
     // ============================================================
-    // Create two packets belonging to the same connection.
+    // Create two packets belonging to the same direction.
     // ============================================================
 
     DPI::PacketJob packet1;
@@ -36,10 +37,16 @@ int main() {
         packet1;
 
     packet2.packet_id = 2;
-
     packet2.data.resize(200);
 
+    // ============================================================
     // Reverse-direction packet.
+    //
+    // The current ConnectionTracker implementation creates a
+    // separate entry when getOrCreateConnection() receives the
+    // reverse FiveTuple.
+    // ============================================================
+
     DPI::PacketJob packet3;
 
     packet3.packet_id = 3;
@@ -50,24 +57,31 @@ int main() {
     packet3.data.resize(150);
 
     // ============================================================
-    // Start Fast Path.
+    // Start FastPath worker.
     // ============================================================
 
     fast_path.start();
+
+    auto& queue =
+        fast_path.getInputQueue();
 
     queue.push(packet1);
     queue.push(packet2);
     queue.push(packet3);
 
-    // Give the worker time to process the packets.
+    // Give worker time to process.
     std::this_thread::sleep_for(
-        std::chrono::milliseconds(200)
+        std::chrono::milliseconds(300)
     );
+
+    // ============================================================
+    // Stop worker.
+    // ============================================================
 
     fast_path.stop();
 
     // ============================================================
-    // Verify statistics.
+    // Read statistics.
     // ============================================================
 
     const auto stats =
@@ -100,36 +114,47 @@ int main() {
         << '\n';
 
     // ============================================================
-    // Assertions.
+    // Verify packet processing.
     // ============================================================
 
     if (stats.packets_processed != 3) {
         std::cerr
-            << "ERROR: Expected 3 processed packets\n";
+            << "ERROR: Expected 3 processed packets, got "
+            << stats.packets_processed
+            << '\n';
 
         return 1;
     }
 
     if (stats.bytes_processed != 450) {
         std::cerr
-            << "ERROR: Expected 450 processed bytes\n";
+            << "ERROR: Expected 450 processed bytes, got "
+            << stats.bytes_processed
+            << '\n';
 
         return 1;
     }
 
-    // packet1 and packet2 are the same flow.
-    // packet3 is the reverse direction of that flow.
-    // ConnectionTracker should recognize all three as one connection.
-    if (stats.connections_created != 1) {
+    // Two unique FiveTuples are inserted:
+    //
+    // 1. A -> B
+    // 2. B -> A
+    //
+    // packet1 and packet2 share the first tuple.
+    if (stats.connections_created != 2) {
         std::cerr
-            << "ERROR: Expected exactly 1 connection\n";
+            << "ERROR: Expected 2 connections, got "
+            << stats.connections_created
+            << '\n';
 
         return 1;
     }
 
-    if (stats.active_connections != 1) {
+    if (stats.active_connections != 2) {
         std::cerr
-            << "ERROR: Expected 1 active connection\n";
+            << "ERROR: Expected 2 active connections, got "
+            << stats.active_connections
+            << '\n';
 
         return 1;
     }

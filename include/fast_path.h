@@ -16,7 +16,7 @@ namespace DPI {
 // Fast Path
 // ============================================================================
 //
-// Each FastPath instance owns:
+// Each FastPath owns:
 //
 //     PacketJob queue
 //           |
@@ -26,7 +26,7 @@ namespace DPI {
 //           v
 //    ConnectionTracker
 //
-// A FastPath processes all packets assigned to its queue.
+// The Load Balancer obtains the queue through getInputQueue().
 //
 // ============================================================================
 
@@ -34,22 +34,26 @@ class FastPath {
 public:
     FastPath(
         int fp_id,
-        ThreadSafeQueue<PacketJob>& input_queue,
         size_t max_connections = 100000
     );
 
     ~FastPath();
 
-    // Start the worker thread.
+    // Start worker thread.
     void start();
 
-    // Stop the worker thread.
+    // Stop worker thread.
     void stop();
 
     // Process one packet synchronously.
     bool processPacket(
         const PacketJob& job
     );
+
+    // Get the input queue used by the Load Balancer.
+    ThreadSafeQueue<PacketJob>& getInputQueue() {
+        return input_queue_;
+    }
 
     int getId() const {
         return fp_id_;
@@ -75,8 +79,10 @@ public:
 private:
     int fp_id_;
 
-    ThreadSafeQueue<PacketJob>& input_queue_;
+    // FastPath owns its own queue.
+    ThreadSafeQueue<PacketJob> input_queue_;
 
+    // Each FP owns its own connection tracker.
     ConnectionTracker tracker_;
 
     std::atomic<bool> running_{false};

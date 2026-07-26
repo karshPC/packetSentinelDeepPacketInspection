@@ -98,25 +98,6 @@ target_link_libraries(connection_tracker
 )
 
 # ============================================================
-# Load Balancer
-# ============================================================
-
-add_library(load_balancer
-    src/load_balancer.cpp
-)
-
-target_include_directories(load_balancer
-    PUBLIC
-        ${CMAKE_SOURCE_DIR}/include
-)
-
-target_link_libraries(load_balancer
-    PUBLIC
-        dpi_types
-        pthread
-)
-
-# ============================================================
 # Fast Path
 # ============================================================
 
@@ -132,6 +113,46 @@ target_include_directories(fast_path
 target_link_libraries(fast_path
     PUBLIC
         connection_tracker
+        dpi_types
+        pthread
+)
+
+# ============================================================
+# Fast Path Manager
+# ============================================================
+
+add_library(fp_manager
+    src/fp_manager.cpp
+)
+
+target_include_directories(fp_manager
+    PUBLIC
+        ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(fp_manager
+    PUBLIC
+        fast_path
+        connection_tracker
+        dpi_types
+        pthread
+)
+
+# ============================================================
+# Load Balancer
+# ============================================================
+
+add_library(load_balancer
+    src/load_balancer.cpp
+)
+
+target_include_directories(load_balancer
+    PUBLIC
+        ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(load_balancer
+    PUBLIC
         dpi_types
         pthread
 )
@@ -251,7 +272,7 @@ target_link_libraries(load_balancer_test
 )
 
 # ============================================================
-# PCAP -> Load Balancer -> FP Test
+# PCAP -> Load Balancer -> FP Queue Test
 # ============================================================
 
 add_executable(pcap_load_balancer_test
@@ -278,6 +299,23 @@ add_executable(fast_path_test
 
 target_link_libraries(fast_path_test
     PRIVATE
+        fast_path
+        connection_tracker
+        dpi_types
+        pthread
+)
+
+# ============================================================
+# Fast Path Manager Test
+# ============================================================
+
+add_executable(fp_manager_test
+    tests/fp_manager_test.cpp
+)
+
+target_link_libraries(fp_manager_test
+    PRIVATE
+        fp_manager
         fast_path
         connection_tracker
         dpi_types

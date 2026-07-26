@@ -11,11 +11,10 @@ namespace DPI {
 
 FastPath::FastPath(
     int fp_id,
-    ThreadSafeQueue<PacketJob>& input_queue,
     size_t max_connections
 )
     : fp_id_(fp_id),
-      input_queue_(input_queue),
+      input_queue_(10000),
       tracker_(
           fp_id,
           max_connections
@@ -115,13 +114,6 @@ void FastPath::run() {
 bool FastPath::isOutbound(
     const PacketJob& job
 ) const {
-    // The capture used by this project has the local host represented
-    // by 192.168.x.x addresses. This helper currently treats traffic
-    // originating from a private IPv4 address as outbound.
-    //
-    // A more general direction-detection mechanism will be introduced
-    // later when the Fast Path receives interface/network configuration.
-
     const uint32_t first_octet =
         (job.tuple.src_ip >> 24) & 0xFF;
 
@@ -135,11 +127,13 @@ bool FastPath::isOutbound(
     if (first_octet == 172 &&
         second_octet >= 16 &&
         second_octet <= 31) {
+
         return true;
     }
 
     if (first_octet == 192 &&
         second_octet == 168) {
+
         return true;
     }
 
