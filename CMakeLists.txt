@@ -158,6 +158,29 @@ target_link_libraries(load_balancer
 )
 
 # ============================================================
+# Pipeline Manager
+# ============================================================
+
+add_library(pipeline_manager
+    src/pipeline_manager.cpp
+)
+
+target_include_directories(pipeline_manager
+    PUBLIC
+        ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(pipeline_manager
+    PUBLIC
+        load_balancer
+        fp_manager
+        fast_path
+        connection_tracker
+        dpi_types
+        pthread
+)
+
+# ============================================================
 # PCAP Reader Test
 # ============================================================
 
@@ -315,6 +338,25 @@ add_executable(fp_manager_test
 
 target_link_libraries(fp_manager_test
     PRIVATE
+        fp_manager
+        fast_path
+        connection_tracker
+        dpi_types
+        pthread
+)
+
+# ============================================================
+# Pipeline Manager Test
+# ============================================================
+
+add_executable(pipeline_manager_test
+    tests/pipeline_manager_test.cpp
+)
+
+target_link_libraries(pipeline_manager_test
+    PRIVATE
+        pipeline_manager
+        load_balancer
         fp_manager
         fast_path
         connection_tracker
