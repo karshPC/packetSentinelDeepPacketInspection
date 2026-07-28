@@ -25,7 +25,7 @@ add_library(dpi_types
 
 target_include_directories(dpi_types
     PUBLIC
-        ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/include
 )
 
 # ============================================================
@@ -38,7 +38,7 @@ add_library(pcap_reader
 
 target_include_directories(pcap_reader
     PUBLIC
-        ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/include
 )
 
 # ============================================================
@@ -51,12 +51,12 @@ add_library(packet_parser
 
 target_include_directories(packet_parser
     PUBLIC
-        ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/include
 )
 
 target_link_libraries(packet_parser
     PUBLIC
-        dpi_types
+    dpi_types
 )
 
 # ============================================================
@@ -69,14 +69,14 @@ add_library(packet_job_builder
 
 target_include_directories(packet_job_builder
     PUBLIC
-        ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/include
 )
 
 target_link_libraries(packet_job_builder
     PUBLIC
-        packet_parser
-        pcap_reader
-        dpi_types
+    packet_parser
+    pcap_reader
+    dpi_types
 )
 
 # ============================================================
@@ -89,12 +89,30 @@ add_library(connection_tracker
 
 target_include_directories(connection_tracker
     PUBLIC
-        ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/include
 )
 
 target_link_libraries(connection_tracker
     PUBLIC
-        dpi_types
+    dpi_types
+)
+
+# ============================================================
+# Rule Manager
+# ============================================================
+
+add_library(rule_manager
+    src/rule_manager.cpp
+)
+
+target_include_directories(rule_manager
+    PUBLIC
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(rule_manager
+    PUBLIC
+    dpi_types
 )
 
 # ============================================================
@@ -107,14 +125,15 @@ add_library(fast_path
 
 target_include_directories(fast_path
     PUBLIC
-        ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/include
 )
 
 target_link_libraries(fast_path
     PUBLIC
-        connection_tracker
-        dpi_types
-        pthread
+    connection_tracker
+    rule_manager
+    dpi_types
+    pthread
 )
 
 # ============================================================
@@ -127,15 +146,16 @@ add_library(fp_manager
 
 target_include_directories(fp_manager
     PUBLIC
-        ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/include
 )
 
 target_link_libraries(fp_manager
     PUBLIC
-        fast_path
-        connection_tracker
-        dpi_types
-        pthread
+    fast_path
+    connection_tracker
+    rule_manager
+    dpi_types
+    pthread
 )
 
 # ============================================================
@@ -148,13 +168,13 @@ add_library(load_balancer
 
 target_include_directories(load_balancer
     PUBLIC
-        ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/include
 )
 
 target_link_libraries(load_balancer
     PUBLIC
-        dpi_types
-        pthread
+    dpi_types
+    pthread
 )
 
 # ============================================================
@@ -167,17 +187,46 @@ add_library(pipeline_manager
 
 target_include_directories(pipeline_manager
     PUBLIC
-        ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/include
 )
 
 target_link_libraries(pipeline_manager
     PUBLIC
-        load_balancer
-        fp_manager
-        fast_path
-        connection_tracker
-        dpi_types
-        pthread
+    load_balancer
+    fp_manager
+    fast_path
+    connection_tracker
+    rule_manager
+    dpi_types
+    pthread
+)
+
+# ============================================================
+# DPI Engine
+# ============================================================
+
+add_library(dpi_engine
+    src/dpi_engine.cpp
+)
+
+target_include_directories(dpi_engine
+    PUBLIC
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(dpi_engine
+    PUBLIC
+    pipeline_manager
+    load_balancer
+    fp_manager
+    fast_path
+    rule_manager
+    packet_job_builder
+    packet_parser
+    pcap_reader
+    connection_tracker
+    dpi_types
+    pthread
 )
 
 # ============================================================
@@ -190,7 +239,7 @@ add_executable(pcap_reader_test
 
 target_link_libraries(pcap_reader_test
     PRIVATE
-        pcap_reader
+    pcap_reader
 )
 
 # ============================================================
@@ -203,8 +252,8 @@ add_executable(packet_parser_test
 
 target_link_libraries(packet_parser_test
     PRIVATE
-        packet_parser
-        pcap_reader
+    packet_parser
+    pcap_reader
 )
 
 # ============================================================
@@ -217,9 +266,9 @@ add_executable(five_tuple_test
 
 target_link_libraries(five_tuple_test
     PRIVATE
-        packet_parser
-        pcap_reader
-        dpi_types
+    packet_parser
+    pcap_reader
+    dpi_types
 )
 
 # ============================================================
@@ -232,7 +281,7 @@ add_executable(thread_safe_queue_test
 
 target_link_libraries(thread_safe_queue_test
     PRIVATE
-        pthread
+    pthread
 )
 
 # ============================================================
@@ -245,7 +294,7 @@ add_executable(packet_job_test
 
 target_link_libraries(packet_job_test
     PRIVATE
-        packet_job_builder
+    packet_job_builder
 )
 
 # ============================================================
@@ -258,11 +307,11 @@ add_executable(packet_pipeline_test
 
 target_link_libraries(packet_pipeline_test
     PRIVATE
-        packet_job_builder
-        packet_parser
-        pcap_reader
-        dpi_types
-        pthread
+    packet_job_builder
+    packet_parser
+    pcap_reader
+    dpi_types
+    pthread
 )
 
 # ============================================================
@@ -275,8 +324,8 @@ add_executable(connection_tracker_test
 
 target_link_libraries(connection_tracker_test
     PRIVATE
-        connection_tracker
-        dpi_types
+    connection_tracker
+    dpi_types
 )
 
 # ============================================================
@@ -289,9 +338,9 @@ add_executable(load_balancer_test
 
 target_link_libraries(load_balancer_test
     PRIVATE
-        load_balancer
-        dpi_types
-        pthread
+    load_balancer
+    dpi_types
+    pthread
 )
 
 # ============================================================
@@ -304,12 +353,12 @@ add_executable(pcap_load_balancer_test
 
 target_link_libraries(pcap_load_balancer_test
     PRIVATE
-        load_balancer
-        packet_job_builder
-        packet_parser
-        pcap_reader
-        dpi_types
-        pthread
+    load_balancer
+    packet_job_builder
+    packet_parser
+    pcap_reader
+    dpi_types
+    pthread
 )
 
 # ============================================================
@@ -322,10 +371,11 @@ add_executable(fast_path_test
 
 target_link_libraries(fast_path_test
     PRIVATE
-        fast_path
-        connection_tracker
-        dpi_types
-        pthread
+    fast_path
+    connection_tracker
+    rule_manager
+    dpi_types
+    pthread
 )
 
 # ============================================================
@@ -338,11 +388,12 @@ add_executable(fp_manager_test
 
 target_link_libraries(fp_manager_test
     PRIVATE
-        fp_manager
-        fast_path
-        connection_tracker
-        dpi_types
-        pthread
+    fp_manager
+    fast_path
+    connection_tracker
+    rule_manager
+    dpi_types
+    pthread
 )
 
 # ============================================================
@@ -355,11 +406,36 @@ add_executable(pipeline_manager_test
 
 target_link_libraries(pipeline_manager_test
     PRIVATE
-        pipeline_manager
-        load_balancer
-        fp_manager
-        fast_path
-        connection_tracker
-        dpi_types
-        pthread
+    pipeline_manager
+    load_balancer
+    fp_manager
+    fast_path
+    connection_tracker
+    rule_manager
+    dpi_types
+    pthread
+)
+
+# ============================================================
+# DPI Engine Test
+# ============================================================
+
+add_executable(dpi_engine_test
+    tests/dpi_engine_test.cpp
+)
+
+target_link_libraries(dpi_engine_test
+    PRIVATE
+    dpi_engine
+    pipeline_manager
+    load_balancer
+    fp_manager
+    fast_path
+    rule_manager
+    packet_job_builder
+    packet_parser
+    pcap_reader
+    connection_tracker
+    dpi_types
+    pthread
 )
