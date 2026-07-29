@@ -8,7 +8,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # ============================================================
-# Header files
+# Include directories
 # ============================================================
 
 include_directories(
@@ -113,6 +113,7 @@ target_include_directories(rule_manager
 target_link_libraries(rule_manager
     PUBLIC
     dpi_types
+    pthread
 )
 
 # ============================================================
@@ -152,8 +153,8 @@ target_include_directories(fp_manager
 target_link_libraries(fp_manager
     PUBLIC
     fast_path
-    connection_tracker
     rule_manager
+    connection_tracker
     dpi_types
     pthread
 )
@@ -196,7 +197,6 @@ target_link_libraries(pipeline_manager
     fp_manager
     fast_path
     connection_tracker
-    rule_manager
     dpi_types
     pthread
 )
@@ -217,15 +217,29 @@ target_include_directories(dpi_engine
 target_link_libraries(dpi_engine
     PUBLIC
     pipeline_manager
+    rule_manager
     load_balancer
     fp_manager
     fast_path
-    rule_manager
     packet_job_builder
     packet_parser
     pcap_reader
     connection_tracker
     dpi_types
+    pthread
+)
+
+# ============================================================
+# DPI Engine CLI
+# ============================================================
+
+add_executable(dpi_engine_app
+    src/main.cpp
+)
+
+target_link_libraries(dpi_engine_app
+    PRIVATE
+    dpi_engine
     pthread
 )
 
@@ -373,7 +387,6 @@ target_link_libraries(fast_path_test
     PRIVATE
     fast_path
     connection_tracker
-    rule_manager
     dpi_types
     pthread
 )
@@ -391,7 +404,6 @@ target_link_libraries(fp_manager_test
     fp_manager
     fast_path
     connection_tracker
-    rule_manager
     dpi_types
     pthread
 )
@@ -411,7 +423,6 @@ target_link_libraries(pipeline_manager_test
     fp_manager
     fast_path
     connection_tracker
-    rule_manager
     dpi_types
     pthread
 )
@@ -428,10 +439,10 @@ target_link_libraries(dpi_engine_test
     PRIVATE
     dpi_engine
     pipeline_manager
+    rule_manager
     load_balancer
     fp_manager
     fast_path
-    rule_manager
     packet_job_builder
     packet_parser
     pcap_reader
