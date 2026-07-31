@@ -4,6 +4,7 @@
 #include "fast_path.h"
 #include "packet_job.h"
 #include "thread_safe_queue.h"
+#include "rule_manager.h"
 
 #include <cstdint>
 #include <memory>
@@ -25,22 +26,27 @@ namespace DPI {
 // 3. Expose FP input queues to the Load Balancer.
 // 4. Expose individual FP instances for inspection/reporting.
 // 5. Aggregate FastPath statistics.
+// 6. Attach the shared RuleManager to every FastPath.
+// 7. Attach the shared output queue to every FastPath.
 //
 // ============================================================================
 
 class FPManager {
 public:
+
     explicit FPManager(
         int num_fps,
-        size_t max_connections = 100000
+        size_t max_connections = 100000,
+        RuleManager* rule_manager = nullptr,
+        ThreadSafeQueue<PacketJob>* output_queue = nullptr
     );
 
     ~FPManager();
 
-    // Start all FP worker threads.
+    // Start all FastPath worker threads.
     void startAll();
 
-    // Stop all FP worker threads.
+    // Stop all FastPath worker threads.
     void stopAll();
 
     // Get a specific FastPath.
@@ -50,7 +56,7 @@ public:
         );
     }
 
-    // Get a specific FP input queue.
+    // Get a specific FastPath input queue.
     ThreadSafeQueue<PacketJob>& getFPQueue(
         int id
     ) {
@@ -59,7 +65,7 @@ public:
         )->getInputQueue();
     }
 
-    // Get raw queue pointers for LBManager.
+    // Get raw queue pointers for Load Balancer Manager.
     std::vector<
         ThreadSafeQueue<PacketJob>*
     > getQueuePtrs();
@@ -71,13 +77,14 @@ public:
         );
     }
 
-    // Check whether all FPs are running.
+    // Check whether all FastPaths are running.
     bool allRunning() const;
 
     // Aggregated FastPath statistics.
     struct AggregatedStats {
         uint64_t total_processed = 0;
         uint64_t total_bytes = 0;
+        uint64_t total_dropped = 0;
         uint64_t total_connections = 0;
         uint64_t total_active_connections = 0;
     };
@@ -87,10 +94,36 @@ public:
     // Generate a simple statistics report.
     std::string generateReport() const;
 
+    // Attach or replace the shared RuleManager.
+    void setRuleManager(
+        RuleManager* rule_manager
+    );
+
+    RuleManager* getRuleManager() const {
+        return rule_manager_;
+    }
+
+    // Attach or replace the shared output queue.
+    void setOutputQueue(
+        ThreadSafeQueue<PacketJob>* output_queue
+    );
+
+    ThreadSafeQueue<PacketJob>* getOutputQueue() const {
+        return output_queue_;
+    }
+
 private:
+
     std::vector<
         std::unique_ptr<FastPath>
     > fps_;
+
+    // Shared RuleManager used by all FastPaths.
+    RuleManager* rule_manager_;
+
+    // Output queue owned by DPIEngine.
+    // FPManager only stores the pointer.
+    ThreadSafeQueue<PacketJob>* output_queue_;
 };
 
 } // namespace DPI

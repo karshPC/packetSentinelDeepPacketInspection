@@ -19,6 +19,10 @@ DPIEngine::DPIEngine(
       output_queue_(config.queue_size) {
 }
 
+// ============================================================================
+// Destructor
+// ============================================================================
+
 DPIEngine::~DPIEngine() {
     stop();
 }
@@ -37,6 +41,7 @@ bool DPIEngine::initialize() {
         std::make_unique<RuleManager>();
 
     if (!config_.rules_file.empty()) {
+
         if (!rule_manager_->loadRules(
                 config_.rules_file)) {
 
@@ -58,7 +63,10 @@ bool DPIEngine::initialize() {
 
     fp_manager_ =
         std::make_unique<FPManager>(
-            total_fps
+            total_fps,
+            100000,
+            rule_manager_.get(),
+            &output_queue_
         );
 
     // ------------------------------------------------------------
@@ -112,6 +120,7 @@ void DPIEngine::start() {
     }
 
     if (!rule_manager_) {
+
         if (!initialize()) {
             return;
         }
@@ -120,17 +129,26 @@ void DPIEngine::start() {
     running_.store(true);
     processing_complete_.store(false);
 
+    // ------------------------------------------------------------
     // Start output writer.
+    // ------------------------------------------------------------
+
     output_thread_ =
         std::thread(
             &DPIEngine::outputThreadFunc,
             this
         );
 
+    // ------------------------------------------------------------
     // Start Fast Paths first.
+    // ------------------------------------------------------------
+
     fp_manager_->startAll();
 
+    // ------------------------------------------------------------
     // Then start Load Balancers.
+    // ------------------------------------------------------------
+
     lb_manager_->startAll();
 
     std::cout
@@ -147,28 +165,46 @@ void DPIEngine::stop() {
         return;
     }
 
+    // ------------------------------------------------------------
     // Stop accepting new work.
+    // ------------------------------------------------------------
+
     running_.store(false);
 
+    // ------------------------------------------------------------
     // Stop reader first.
+    // ------------------------------------------------------------
+
     if (reader_thread_.joinable()) {
         reader_thread_.join();
     }
 
+    // ------------------------------------------------------------
     // Stop load balancers.
+    // ------------------------------------------------------------
+
     if (lb_manager_) {
         lb_manager_->stopAll();
     }
 
+    // ------------------------------------------------------------
     // Stop fast paths.
+    // ------------------------------------------------------------
+
     if (fp_manager_) {
         fp_manager_->stopAll();
     }
 
+    // ------------------------------------------------------------
     // Stop output queue.
+    // ------------------------------------------------------------
+
     output_queue_.shutdown();
 
+    // ------------------------------------------------------------
     // Stop output writer.
+    // ------------------------------------------------------------
+
     if (output_thread_.joinable()) {
         output_thread_.join();
     }
@@ -291,7 +327,10 @@ void DPIEngine::readerThreadFunc(
         return;
     }
 
+    // ------------------------------------------------------------
     // Write output PCAP header.
+    // ------------------------------------------------------------
+
     writeOutputHeader(
         reader.getGlobalHeader()
     );
@@ -340,7 +379,10 @@ void DPIEngine::readerThreadFunc(
         const bool has_udp =
             parsed.udp != nullptr;
 
+        // --------------------------------------------------------
         // We only send IPv4 TCP/UDP packets into the pipeline.
+        // --------------------------------------------------------
+
         if (!has_ip) {
             continue;
         }
@@ -370,17 +412,34 @@ void DPIEngine::readerThreadFunc(
             raw.data.size();
 
         if (has_tcp) {
+
             stats_.tcp_packets++;
+
         }
         else if (has_udp) {
+
             stats_.udp_packets++;
+
         }
         else {
+
             stats_.other_packets++;
         }
 
         // --------------------------------------------------------
-        // Send packet to the appropriate LB.
+        // Send packet ONLY to Load Balancer.
+        //
+        // IMPORTANT:
+        // The packet must NOT be pushed directly to the output
+        // queue here.
+        //
+        // The path is:
+        //
+        // Reader -> LB -> FastPath -> RuleManager
+        //                          |
+        //                     DROP / ACCEPT
+        //                          |
+        //                       Output
         // --------------------------------------------------------
 
         LoadBalancer& lb =
@@ -389,19 +448,6 @@ void DPIEngine::readerThreadFunc(
             );
 
         lb.getInputQueue().push(
-            job
-        );
-
-        // --------------------------------------------------------
-        // Current FastPath implementation does not expose an
-        // output callback. Therefore the engine keeps a copy
-        // for the output writer.
-        //
-        // The actual FastPath processing still happens through
-        // LB -> FP queues independently.
-        // --------------------------------------------------------
-
-        output_queue_.push(
             std::move(job)
         );
     }
@@ -480,11 +526,6 @@ PacketJob DPIEngine::createPacketJob(
     // Payload information.
     //
     // PacketJob owns its own copy of the packet data.
-    // The payload can be accessed using:
-    //
-    //     job.data.data() + job.payload_offset
-    //
-    // No separate payload pointer is stored in PacketJob.
     // ------------------------------------------------------------
 
     if (
@@ -527,6 +568,8 @@ void DPIEngine::outputThreadFunc() {
 
         writeOutputPacket(job);
 
+        // Every packet reaching the output queue has already
+        // passed FastPath rule checking.
         stats_.forwarded_packets++;
     }
 }
@@ -634,57 +677,76 @@ void DPIEngine::blockIP(
     const std::string& ip
 ) {
 
-    if (rule_manager_) {
-        rule_manager_->blockIP(ip);
+    if (!rule_manager_) {
+
+        if (!initialize()) {
+            return;
+        }
     }
+
+    rule_manager_->blockIP(ip);
 }
 
 void DPIEngine::unblockIP(
     const std::string& ip
 ) {
 
-    if (rule_manager_) {
-        rule_manager_->unblockIP(ip);
+    if (!rule_manager_) {
+
+        if (!initialize()) {
+            return;
+        }
     }
+
+    rule_manager_->unblockIP(ip);
 }
 
 void DPIEngine::blockApp(
     AppType app
 ) {
 
-    if (rule_manager_) {
-        rule_manager_->blockApp(app);
+    if (!rule_manager_) {
+
+        if (!initialize()) {
+            return;
+        }
     }
+
+    rule_manager_->blockApp(app);
 }
 
 void DPIEngine::blockApp(
     const std::string& app_name
 ) {
 
-    if (rule_manager_) {
+    if (!rule_manager_) {
 
-        for (
-            int i = 0;
-            i < static_cast<int>(
-                AppType::APP_COUNT
-            );
-            ++i
+        if (!initialize()) {
+            return;
+        }
+    }
+
+    for (
+        int i = 0;
+        i < static_cast<int>(
+            AppType::APP_COUNT
+        );
+        ++i
+    ) {
+
+        AppType app =
+            static_cast<AppType>(i);
+
+        if (
+            appTypeToString(app) ==
+            app_name
         ) {
 
-            AppType app =
-                static_cast<AppType>(i);
+            rule_manager_->blockApp(
+                app
+            );
 
-            if (
-                appTypeToString(app)
-                == app_name
-            ) {
-
-                rule_manager_->blockApp(
-                    app
-                );
-
-                return;
-            }
+            return;
         }
     }
 }
@@ -693,39 +755,48 @@ void DPIEngine::unblockApp(
     AppType app
 ) {
 
-    if (rule_manager_) {
-        rule_manager_->unblockApp(app);
+    if (!rule_manager_) {
+
+        if (!initialize()) {
+            return;
+        }
     }
+
+    rule_manager_->unblockApp(app);
 }
 
 void DPIEngine::unblockApp(
     const std::string& app_name
 ) {
 
-    if (rule_manager_) {
+    if (!rule_manager_) {
 
-        for (
-            int i = 0;
-            i < static_cast<int>(
-                AppType::APP_COUNT
-            );
-            ++i
+        if (!initialize()) {
+            return;
+        }
+    }
+
+    for (
+        int i = 0;
+        i < static_cast<int>(
+            AppType::APP_COUNT
+        );
+        ++i
+    ) {
+
+        AppType app =
+            static_cast<AppType>(i);
+
+        if (
+            appTypeToString(app) ==
+            app_name
         ) {
 
-            AppType app =
-                static_cast<AppType>(i);
+            rule_manager_->unblockApp(
+                app
+            );
 
-            if (
-                appTypeToString(app)
-                == app_name
-            ) {
-
-                rule_manager_->unblockApp(
-                    app
-                );
-
-                return;
-            }
+            return;
         }
     }
 }
@@ -734,18 +805,28 @@ void DPIEngine::blockDomain(
     const std::string& domain
 ) {
 
-    if (rule_manager_) {
-        rule_manager_->blockDomain(domain);
+    if (!rule_manager_) {
+
+        if (!initialize()) {
+            return;
+        }
     }
+
+    rule_manager_->blockDomain(domain);
 }
 
 void DPIEngine::unblockDomain(
     const std::string& domain
 ) {
 
-    if (rule_manager_) {
-        rule_manager_->unblockDomain(domain);
+    if (!rule_manager_) {
+
+        if (!initialize()) {
+            return;
+        }
     }
+
+    rule_manager_->unblockDomain(domain);
 }
 
 bool DPIEngine::loadRules(
@@ -753,11 +834,10 @@ bool DPIEngine::loadRules(
 ) {
 
     if (!rule_manager_) {
-        initialize();
-    }
 
-    if (!rule_manager_) {
-        return false;
+        if (!initialize()) {
+            return false;
+        }
     }
 
     return rule_manager_->loadRules(
@@ -770,11 +850,10 @@ bool DPIEngine::saveRules(
 ) {
 
     if (!rule_manager_) {
-        initialize();
-    }
 
-    if (!rule_manager_) {
-        return false;
+        if (!initialize()) {
+            return false;
+        }
     }
 
     return rule_manager_->saveRules(
@@ -789,6 +868,21 @@ bool DPIEngine::saveRules(
 std::string DPIEngine::generateReport() const {
 
     std::ostringstream ss;
+
+    // ------------------------------------------------------------
+    // Get FastPath statistics ONCE.
+    //
+    // FastPath is the authoritative source for:
+    //   - accepted packets
+    //   - dropped packets
+    // ------------------------------------------------------------
+
+    FPManager::AggregatedStats fp_stats{};
+
+    if (fp_manager_) {
+        fp_stats =
+            fp_manager_->getAggregatedStats();
+    }
 
     ss
         << "\n"
@@ -821,18 +915,32 @@ std::string DPIEngine::generateReport() const {
         << stats_.other_packets.load()
         << "\n";
 
+    // ------------------------------------------------------------
+    // Forwarded packets
+    //
+    // These are packets that actually reached the output queue
+    // and were written to the output PCAP.
+    // ------------------------------------------------------------
+
     ss
         << "Forwarded packets:  "
         << stats_.forwarded_packets.load()
         << "\n";
 
+    // ------------------------------------------------------------
+    // Dropped packets
+    //
+    // FastPath owns this statistic because FastPath performs
+    // the actual RuleManager check.
+    // ------------------------------------------------------------
+
     ss
         << "Dropped packets:    "
-        << stats_.dropped_packets.load()
+        << fp_stats.total_dropped
         << "\n";
 
     // ------------------------------------------------------------
-    // Load balancer statistics.
+    // Load Balancer statistics.
     // ------------------------------------------------------------
 
     if (lb_manager_) {
@@ -860,15 +968,17 @@ std::string DPIEngine::generateReport() const {
 
     if (fp_manager_) {
 
-        auto fp_stats =
-            fp_manager_->getAggregatedStats();
-
         ss
             << "\nFast Paths:\n";
 
         ss
             << "  Packets processed: "
             << fp_stats.total_processed
+            << "\n";
+
+        ss
+            << "  Packets dropped:   "
+            << fp_stats.total_dropped
             << "\n";
 
         ss
@@ -975,24 +1085,32 @@ void DPIEngine::printStatus() const {
         << stats_.total_bytes.load()
         << "\n";
 
-    std::cout
-        << "Forwarded: "
-        << stats_.forwarded_packets.load()
-        << "\n";
+    // ------------------------------------------------------------
+    // Get authoritative FastPath statistics.
+    // ------------------------------------------------------------
 
-    std::cout
-        << "Dropped: "
-        << stats_.dropped_packets.load()
-        << "\n";
+    uint64_t forwarded = 0;
+    uint64_t dropped = 0;
 
     if (fp_manager_) {
 
-        auto fp_stats =
+        const auto fp_stats =
             fp_manager_->getAggregatedStats();
+
+        forwarded =
+            fp_stats.total_processed;
+
+        dropped =
+            fp_stats.total_dropped;
 
         std::cout
             << "FP processed: "
             << fp_stats.total_processed
+            << "\n";
+
+        std::cout
+            << "FP dropped: "
+            << fp_stats.total_dropped
             << "\n";
 
         std::cout
@@ -1005,6 +1123,16 @@ void DPIEngine::printStatus() const {
             << fp_stats.total_active_connections
             << "\n";
     }
+
+    std::cout
+        << "Forwarded: "
+        << forwarded
+        << "\n";
+
+    std::cout
+        << "Dropped: "
+        << dropped
+        << "\n";
 }
 
 } // namespace DPI
