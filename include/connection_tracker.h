@@ -4,7 +4,10 @@
 #include "types.h"
 
 #include <chrono>
+#include <cstddef>
 #include <functional>
+#include <memory>
+#include <mutex>
 #include <shared_mutex>
 #include <string>
 #include <unordered_map>
@@ -22,9 +25,12 @@ namespace DPI {
 // Each FiveTuple identifies a flow. Reverse tuples are recognized so that
 // packets travelling in the opposite direction can be associated with the
 // same connection.
+//
 // ============================================================================
+
 class ConnectionTracker {
 public:
+
     ConnectionTracker(
         int fp_id,
         size_t max_connections = 100000
@@ -77,6 +83,10 @@ public:
     // Number of currently tracked connections.
     size_t getActiveCount() const;
 
+    // ========================================================================
+    // Statistics
+    // ========================================================================
+
     struct TrackerStats {
         size_t active_connections = 0;
         size_t total_connections_seen = 0;
@@ -95,8 +105,13 @@ public:
     ) const;
 
 private:
+
     int fp_id_;
     size_t max_connections_;
+
+    // ========================================================================
+    // Connection table
+    // ========================================================================
 
     std::unordered_map<
         FiveTuple,
@@ -104,9 +119,17 @@ private:
         FiveTupleHash
     > connections_;
 
+    // ========================================================================
+    // Statistics
+    // ========================================================================
+
     size_t total_seen_ = 0;
     size_t classified_count_ = 0;
     size_t blocked_count_ = 0;
+
+    // ========================================================================
+    // Helpers
+    // ========================================================================
 
     void evictOldest();
 };
@@ -116,9 +139,12 @@ private:
 // ============================================================================
 //
 // Aggregates statistics from multiple ConnectionTracker instances.
+//
 // ============================================================================
+
 class GlobalConnectionTable {
 public:
+
     explicit GlobalConnectionTable(
         size_t num_fps
     );
@@ -127,6 +153,10 @@ public:
         int fp_id,
         ConnectionTracker* tracker
     );
+
+    // ========================================================================
+    // Global Statistics
+    // ========================================================================
 
     struct GlobalStats {
         size_t total_active_connections = 0;
@@ -147,7 +177,10 @@ public:
     std::string generateReport() const;
 
 private:
-    std::vector<ConnectionTracker*> trackers_;
+
+    std::vector<
+        ConnectionTracker*
+    > trackers_;
 
     mutable std::shared_mutex mutex_;
 };
