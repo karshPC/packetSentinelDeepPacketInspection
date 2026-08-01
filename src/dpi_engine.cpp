@@ -288,9 +288,6 @@ bool DPIEngine::processFile(
         output_file_.close();
     }
 
-    std::cout
-        << generateReport();
-
     return true;
 }
 

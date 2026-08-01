@@ -14,6 +14,12 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # ============================================================
+# Testing
+# ============================================================
+
+enable_testing()
+
+# ============================================================
 # Threads
 # ============================================================
 
@@ -165,6 +171,7 @@ target_link_libraries(fast_path
     connection_tracker
     rule_manager
     dpi_types
+    sni_extractor
     Threads::Threads
 )
 
@@ -496,4 +503,163 @@ target_link_libraries(sni_extractor_test
     PRIVATE
     sni_extractor
     dpi_types
+)
+
+# ============================================================
+# Fast Path Rule Enforcement Test
+# ============================================================
+
+add_executable(fast_path_rule_test
+    tests/fast_path_rule_test.cpp
+)
+
+target_link_libraries(fast_path_rule_test
+    PRIVATE
+    fast_path
+    connection_tracker
+    rule_manager
+    sni_extractor
+    dpi_types
+    Threads::Threads
+)
+
+# ============================================================
+# CTest Registration
+# ============================================================
+
+# Tests requiring the PCAP file receive its absolute path.
+set(TEST_PCAP
+    ${CMAKE_SOURCE_DIR}/tests/test_dpi.pcap
+)
+
+# ------------------------------------------------------------
+# PCAP Reader Test
+# ------------------------------------------------------------
+
+add_test(
+    NAME pcap_reader_test
+    COMMAND pcap_reader_test ${TEST_PCAP}
+)
+
+# ------------------------------------------------------------
+# Packet Parser Test
+# ------------------------------------------------------------
+
+add_test(
+    NAME packet_parser_test
+    COMMAND packet_parser_test ${TEST_PCAP}
+)
+
+# ------------------------------------------------------------
+# Five Tuple Test
+# ------------------------------------------------------------
+
+add_test(
+    NAME five_tuple_test
+    COMMAND five_tuple_test ${TEST_PCAP}
+)
+
+# ------------------------------------------------------------
+# Thread Safe Queue Test
+# ------------------------------------------------------------
+
+add_test(
+    NAME thread_safe_queue_test
+    COMMAND thread_safe_queue_test
+)
+
+# ------------------------------------------------------------
+# Packet Job Test
+# ------------------------------------------------------------
+
+add_test(
+    NAME packet_job_test
+    COMMAND packet_job_test ${TEST_PCAP}
+)
+
+# ------------------------------------------------------------
+# Packet Pipeline Test
+# ------------------------------------------------------------
+
+add_test(
+    NAME packet_pipeline_test
+    COMMAND packet_pipeline_test ${TEST_PCAP}
+)
+
+# ------------------------------------------------------------
+# Connection Tracker Test
+# ------------------------------------------------------------
+
+add_test(
+    NAME connection_tracker_test
+    COMMAND connection_tracker_test
+)
+
+# ------------------------------------------------------------
+# Load Balancer Test
+# ------------------------------------------------------------
+
+add_test(
+    NAME load_balancer_test
+    COMMAND load_balancer_test
+)
+
+# ------------------------------------------------------------
+# Fast Path Test
+# ------------------------------------------------------------
+
+add_test(
+    NAME fast_path_test
+    COMMAND fast_path_test
+)
+
+# ------------------------------------------------------------
+# Fast Path Rule Enforcement Test
+# ------------------------------------------------------------
+
+add_test(
+    NAME fast_path_rule_test
+    COMMAND fast_path_rule_test
+)
+
+# ------------------------------------------------------------
+# Fast Path Manager Test
+# ------------------------------------------------------------
+
+add_test(
+    NAME fp_manager_test
+    COMMAND fp_manager_test
+)
+
+# ------------------------------------------------------------
+# Pipeline Manager Test
+# ------------------------------------------------------------
+
+add_test(
+    NAME pipeline_manager_test
+    COMMAND pipeline_manager_test
+)
+
+# ------------------------------------------------------------
+# DPI Engine Test
+# ------------------------------------------------------------
+
+add_test(
+    NAME dpi_engine_test
+    COMMAND dpi_engine_test ${TEST_PCAP}
+)
+
+set_tests_properties(
+    dpi_engine_test
+    PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+
+# ------------------------------------------------------------
+# SNI / HTTP Deep Inspection Test
+# ------------------------------------------------------------
+
+add_test(
+    NAME sni_extractor_test
+    COMMAND sni_extractor_test
 )

@@ -5,11 +5,11 @@
 #include "connection_tracker.h"
 #include "packet_job.h"
 #include "thread_safe_queue.h"
+#include "sni_extractor.h"
 
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
-#include <string>
 #include <thread>
 
 namespace DPI {
@@ -26,23 +26,31 @@ namespace DPI {
 //      FastPath worker
 //           |
 //           v
-//      RuleManager check
+//      ConnectionTracker
 //           |
-//       +---+---+
-//       |       |
-//      DROP   FORWARD
-//       |       |
-//       v       v
-//    drop    ConnectionTracker
-//                |
-//                v
-//           Output Queue
+//           v
+//      Application Inspection
+//       /              \
+//     TLS              HTTP
+//      |                |
+//     SNI              Host
+//      |                |
+//      +-------+--------+
+//              |
+//              v
+//        Application Classification
+//              |
+//              v
+//          RuleManager
+//          /        \
+//       DROP       ACCEPT
+//        |            |
+//        v            v
+//      discard    Output Queue
 //
 // The Load Balancer obtains the input queue through getInputQueue().
 //
-// Accepted packets are pushed into the shared output queue.
-// Dropped packets never reach the output queue.
-//
+// The RuleManager may be shared by all FastPaths.
 // ============================================================================
 
 class FastPath {
@@ -65,8 +73,8 @@ public:
 
     // Process one packet synchronously.
     //
-    // Returns true if the packet is accepted/processed.
-    // Returns false if the packet is dropped by a rule.
+    // Returns true if the packet is accepted.
+    // Returns false if the packet is dropped.
     bool processPacket(
         const PacketJob& job
     );
@@ -85,9 +93,6 @@ public:
     }
 
     // Attach or replace the RuleManager.
-    //
-    // RuleManager is thread-safe, so multiple FastPaths
-    // can safely point to the same instance.
     void setRuleManager(
         RuleManager* rule_manager
     );
@@ -97,9 +102,6 @@ public:
     }
 
     // Attach or replace the output queue.
-    //
-    // Accepted packets are pushed into this queue after
-    // FastPath processing. Dropped packets are never pushed.
     void setOutputQueue(
         ThreadSafeQueue<PacketJob>* output_queue
     );
@@ -107,6 +109,10 @@ public:
     ThreadSafeQueue<PacketJob>* getOutputQueue() const {
         return output_queue_;
     }
+
+    // ========================================================================
+    // Statistics
+    // ========================================================================
 
     struct FPStats {
         uint64_t packets_processed = 0;
@@ -129,17 +135,14 @@ private:
     // FastPath owns its own input queue.
     ThreadSafeQueue<PacketJob> input_queue_;
 
-    // Each FP owns its own connection tracker.
+    // Each FastPath owns its own connection tracker.
     ConnectionTracker tracker_;
 
-    // Optional shared RuleManager.
-    //
-    // All FastPaths may point to the same RuleManager.
+    // Shared RuleManager.
     RuleManager* rule_manager_ = nullptr;
 
     // Shared output queue owned by DPIEngine.
-    //
-    // FastPaths only hold a non-owning pointer.
+    // FastPath does not own this object.
     ThreadSafeQueue<PacketJob>* output_queue_ = nullptr;
 
     std::atomic<bool> running_{false};
@@ -150,16 +153,39 @@ private:
 
     std::thread thread_;
 
+    // Worker loop.
     void run();
 
+    // Determine whether the packet originates from a private
+    // network address.
     bool isOutbound(
         const PacketJob& job
     ) const;
 
-    // Returns true when the packet should be dropped.
+    // Evaluate all applicable rules after application
+    // classification has taken place.
+    //
+    // The connection contains:
+    //   - AppType
+    //   - SNI / Host
+    //
+    // Returns true when the packet/connection should be dropped.
     bool shouldDrop(
-        const PacketJob& job
+        const PacketJob& job,
+        const Connection* connection
     ) const;
+
+    // Inspect application payload and classify the connection.
+    //
+    // TLS:
+    //     ClientHello -> SNI -> AppType
+    //
+    // HTTP:
+    //     Host header -> AppType
+    void inspectApplication(
+        const PacketJob& job,
+        Connection* connection
+    );
 };
 
 } // namespace DPI
