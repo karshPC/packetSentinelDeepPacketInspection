@@ -5,7 +5,7 @@
 #include <mutex>
 #include <sstream>
 
-namespace DPI {
+using namespace DPI;
 
 // ============================================================================
 // ConnectionTracker
@@ -18,6 +18,10 @@ ConnectionTracker::ConnectionTracker(
     : fp_id_(fp_id),
       max_connections_(max_connections) {
 }
+
+// ============================================================================
+// Get or create connection
+// ============================================================================
 
 Connection* ConnectionTracker::getOrCreateConnection(
     const FiveTuple& tuple
@@ -32,21 +36,23 @@ Connection* ConnectionTracker::getOrCreateConnection(
         evictOldest();
     }
 
-    Connection conn;
+    Connection connection;
 
-    conn.tuple = tuple;
-    conn.state = ConnectionState::NEW;
+    connection.tuple = tuple;
+    connection.state = ConnectionState::NEW;
+    connection.app_type = AppType::UNKNOWN;
+    connection.action = PacketAction::FORWARD;
 
-    conn.first_seen =
+    const auto now =
         std::chrono::steady_clock::now();
 
-    conn.last_seen =
-        conn.first_seen;
+    connection.first_seen = now;
+    connection.last_seen = now;
 
     auto result =
         connections_.emplace(
             tuple,
-            std::move(conn)
+            std::move(connection)
         );
 
     if (!result.second) {
@@ -58,6 +64,10 @@ Connection* ConnectionTracker::getOrCreateConnection(
     return &result.first->second;
 }
 
+// ============================================================================
+// Get existing connection
+// ============================================================================
+
 Connection* ConnectionTracker::getConnection(
     const FiveTuple& tuple
 ) {
@@ -67,19 +77,21 @@ Connection* ConnectionTracker::getConnection(
         return &it->second;
     }
 
-    // Check the reverse direction of the flow.
-    FiveTuple reverse_tuple =
+    const FiveTuple reverse =
         tuple.reverse();
 
-    auto reverse_it =
-        connections_.find(reverse_tuple);
+    it = connections_.find(reverse);
 
-    if (reverse_it != connections_.end()) {
-        return &reverse_it->second;
+    if (it != connections_.end()) {
+        return &it->second;
     }
 
     return nullptr;
 }
+
+// ============================================================================
+// Update connection
+// ============================================================================
 
 void ConnectionTracker::updateConnection(
     Connection* conn,
@@ -90,9 +102,6 @@ void ConnectionTracker::updateConnection(
         return;
     }
 
-    conn->last_seen =
-        std::chrono::steady_clock::now();
-
     if (is_outbound) {
         ++conn->packets_out;
         conn->bytes_out += packet_size;
@@ -101,12 +110,18 @@ void ConnectionTracker::updateConnection(
         conn->bytes_in += packet_size;
     }
 
-    // A new flow becomes established once traffic is observed.
+    conn->last_seen =
+        std::chrono::steady_clock::now();
+
     if (conn->state == ConnectionState::NEW) {
         conn->state =
             ConnectionState::ESTABLISHED;
     }
 }
+
+// ============================================================================
+// Classify connection
+// ============================================================================
 
 void ConnectionTracker::classifyConnection(
     Connection* conn,
@@ -117,16 +132,29 @@ void ConnectionTracker::classifyConnection(
         return;
     }
 
-    if (conn->state != ConnectionState::CLASSIFIED) {
-        conn->app_type = app;
-        conn->sni = sni;
+    const bool was_classified =
+        conn->app_type != AppType::UNKNOWN;
+
+    conn->app_type = app;
+    conn->sni = sni;
+
+    if (conn->state != ConnectionState::BLOCKED &&
+        conn->state != ConnectionState::CLOSED) {
 
         conn->state =
             ConnectionState::CLASSIFIED;
+    }
+
+    if (!was_classified &&
+        app != AppType::UNKNOWN) {
 
         ++classified_count_;
     }
 }
+
+// ============================================================================
+// Block connection
+// ============================================================================
 
 void ConnectionTracker::blockConnection(
     Connection* conn
@@ -135,39 +163,45 @@ void ConnectionTracker::blockConnection(
         return;
     }
 
+    if (conn->state != ConnectionState::BLOCKED) {
+        ++blocked_count_;
+    }
+
     conn->state =
         ConnectionState::BLOCKED;
 
     conn->action =
         PacketAction::DROP;
-
-    ++blocked_count_;
 }
+
+// ============================================================================
+// Close connection
+// ============================================================================
 
 void ConnectionTracker::closeConnection(
     const FiveTuple& tuple
 ) {
-    auto it = connections_.find(tuple);
+    auto it =
+        connections_.find(tuple);
+
+    if (it == connections_.end()) {
+
+        const FiveTuple reverse =
+            tuple.reverse();
+
+        it =
+            connections_.find(reverse);
+    }
 
     if (it != connections_.end()) {
         it->second.state =
             ConnectionState::CLOSED;
-
-        return;
-    }
-
-    // Also support closing using the reverse direction.
-    FiveTuple reverse_tuple =
-        tuple.reverse();
-
-    auto reverse_it =
-        connections_.find(reverse_tuple);
-
-    if (reverse_it != connections_.end()) {
-        reverse_it->second.state =
-            ConnectionState::CLOSED;
     }
 }
+
+// ============================================================================
+// Cleanup stale connections
+// ============================================================================
 
 size_t ConnectionTracker::cleanupStale(
     std::chrono::seconds timeout
@@ -180,27 +214,32 @@ size_t ConnectionTracker::cleanupStale(
     for (auto it = connections_.begin();
          it != connections_.end();) {
 
-        const auto age =
-            std::chrono::duration_cast<
-                std::chrono::seconds
-            >(
-                now - it->second.last_seen
-            );
+        const bool stale =
+            (now - it->second.last_seen) >= timeout;
 
-        if (age > timeout ||
+        const bool closed =
             it->second.state ==
-                ConnectionState::CLOSED) {
+            ConnectionState::CLOSED;
 
-            it = connections_.erase(it);
+        if (stale || closed) {
+
+            it =
+                connections_.erase(it);
+
             ++removed;
 
         } else {
+
             ++it;
         }
     }
 
     return removed;
 }
+
+// ============================================================================
+// Snapshot
+// ============================================================================
 
 std::vector<Connection>
 ConnectionTracker::getAllConnections() const {
@@ -210,16 +249,28 @@ ConnectionTracker::getAllConnections() const {
         connections_.size()
     );
 
-    for (const auto& pair : connections_) {
-        result.push_back(pair.second);
+    for (const auto& entry :
+         connections_) {
+
+        result.push_back(
+            entry.second
+        );
     }
 
     return result;
 }
 
+// ============================================================================
+// Active count
+// ============================================================================
+
 size_t ConnectionTracker::getActiveCount() const {
     return connections_.size();
 }
+
+// ============================================================================
+// Statistics
+// ============================================================================
 
 ConnectionTracker::TrackerStats
 ConnectionTracker::getStats() const {
@@ -240,9 +291,21 @@ ConnectionTracker::getStats() const {
     return stats;
 }
 
+// ============================================================================
+// Clear
+// ============================================================================
+
 void ConnectionTracker::clear() {
     connections_.clear();
+
+    total_seen_ = 0;
+    classified_count_ = 0;
+    blocked_count_ = 0;
 }
+
+// ============================================================================
+// Iterate
+// ============================================================================
 
 void ConnectionTracker::forEach(
     std::function<void(const Connection&)> callback
@@ -251,10 +314,16 @@ void ConnectionTracker::forEach(
         return;
     }
 
-    for (const auto& pair : connections_) {
-        callback(pair.second);
+    for (const auto& entry :
+         connections_) {
+
+        callback(entry.second);
     }
 }
+
+// ============================================================================
+// Evict oldest
+// ============================================================================
 
 void ConnectionTracker::evictOldest() {
     if (connections_.empty()) {
@@ -291,6 +360,10 @@ GlobalConnectionTable::GlobalConnectionTable(
     );
 }
 
+// ============================================================================
+// Register tracker
+// ============================================================================
+
 void GlobalConnectionTable::registerTracker(
     int fp_id,
     ConnectionTracker* tracker
@@ -300,12 +373,18 @@ void GlobalConnectionTable::registerTracker(
     > lock(mutex_);
 
     if (fp_id < 0 ||
-        fp_id >= static_cast<int>(trackers_.size())) {
+        fp_id >=
+            static_cast<int>(trackers_.size())) {
+
         return;
     }
 
     trackers_[fp_id] = tracker;
 }
+
+// ============================================================================
+// Global statistics
+// ============================================================================
 
 GlobalConnectionTable::GlobalStats
 GlobalConnectionTable::getGlobalStats() const {
@@ -320,7 +399,9 @@ GlobalConnectionTable::getGlobalStats() const {
         size_t
     > domain_counts;
 
-    for (const auto* tracker : trackers_) {
+    for (const auto* tracker :
+         trackers_) {
+
         if (!tracker) {
             continue;
         }
@@ -336,11 +417,13 @@ GlobalConnectionTable::getGlobalStats() const {
 
         tracker->forEach(
             [&](const Connection& conn) {
+
                 ++stats.app_distribution[
                     conn.app_type
                 ];
 
                 if (!conn.sni.empty()) {
+
                     ++domain_counts[
                         conn.sni
                     ];
@@ -360,7 +443,12 @@ GlobalConnectionTable::getGlobalStats() const {
         domain_vector.begin(),
         domain_vector.end(),
         [](const auto& a, const auto& b) {
-            return a.second > b.second;
+
+            if (a.second != b.second) {
+                return a.second > b.second;
+            }
+
+            return a.first < b.first;
         }
     );
 
@@ -378,6 +466,10 @@ GlobalConnectionTable::getGlobalStats() const {
     return stats;
 }
 
+// ============================================================================
+// Generate report
+// ============================================================================
+
 std::string
 GlobalConnectionTable::generateReport() const {
     const GlobalStats stats =
@@ -386,104 +478,101 @@ GlobalConnectionTable::generateReport() const {
     std::ostringstream ss;
 
     ss << "\n"
-       << "╔══════════════════════════════════════════════════════════════╗\n"
-       << "║               CONNECTION STATISTICS REPORT                 ║\n"
-       << "╠══════════════════════════════════════════════════════════════╣\n";
+       << "============================================================\n"
+       << "              CONNECTION STATISTICS REPORT\n"
+       << "============================================================\n";
 
-    ss << "║ Active Connections:     "
-       << std::setw(10)
+    ss << "Active Connections:     "
        << stats.total_active_connections
-       << "                          ║\n";
+       << "\n";
 
-    ss << "║ Total Connections Seen: "
-       << std::setw(10)
+    ss << "Total Connections Seen: "
        << stats.total_connections_seen
-       << "                          ║\n";
+       << "\n";
 
-    ss << "╠══════════════════════════════════════════════════════════════╣\n"
-       << "║                    APPLICATION BREAKDOWN                   ║\n"
-       << "╠══════════════════════════════════════════════════════════════╣\n";
+    // ========================================================================
+    // Application breakdown
+    // ========================================================================
 
-    size_t total_applications = 0;
-
-    for (const auto& pair :
-         stats.app_distribution) {
-
-        total_applications +=
-            pair.second;
-    }
+    ss << "\n"
+       << "============================================================\n"
+       << "                    APPLICATION BREAKDOWN\n"
+       << "============================================================\n";
 
     std::vector<
-        std::pair<AppType, size_t>
-    > sorted_apps(
-        stats.app_distribution.begin(),
-        stats.app_distribution.end()
-    );
+        std::pair<std::string, size_t>
+    > applications;
+
+    for (const auto& entry :
+         stats.app_distribution) {
+
+        std::string app_name =
+            appTypeToString(entry.first);
+
+        // Convert application name to uppercase
+        // for the human-readable global report.
+        std::transform(
+            app_name.begin(),
+            app_name.end(),
+            app_name.begin(),
+            [](unsigned char c) {
+                return static_cast<char>(
+                    std::toupper(c)
+                );
+            }
+        );
+
+        applications.emplace_back(
+            app_name,
+            entry.second
+        );
+    }
 
     std::sort(
-        sorted_apps.begin(),
-        sorted_apps.end(),
+        applications.begin(),
+        applications.end(),
         [](const auto& a, const auto& b) {
-            return a.second > b.second;
+
+            if (a.second != b.second) {
+                return a.second > b.second;
+            }
+
+            return a.first < b.first;
         }
     );
 
-    for (const auto& pair :
-         sorted_apps) {
+    for (const auto& entry :
+         applications) {
 
-        const double percentage =
-            total_applications > 0
-                ? 100.0 *
-                      pair.second /
-                      total_applications
-                : 0.0;
-
-        ss << "║ "
-           << std::setw(20)
-           << std::left
-           << appTypeToString(pair.first)
-           << std::setw(10)
-           << std::right
-           << pair.second
-           << " ("
-           << std::fixed
-           << std::setprecision(1)
-           << std::setw(5)
-           << percentage
-           << "%)           ║\n";
+        ss << std::left
+           << std::setw(25)
+           << entry.first
+           << " : "
+           << entry.second
+           << "\n";
     }
 
-    if (!stats.top_domains.empty()) {
-        ss << "╠══════════════════════════════════════════════════════════════╣\n"
-           << "║                      TOP DOMAINS                            ║\n"
-           << "╠══════════════════════════════════════════════════════════════╣\n";
+    // ========================================================================
+    // Top domains
+    // ========================================================================
 
-        for (const auto& pair :
-             stats.top_domains) {
+    ss << "\n"
+       << "============================================================\n"
+       << "                       TOP DOMAINS\n"
+       << "============================================================\n";
 
-            std::string domain =
-                pair.first;
+    for (const auto& entry :
+         stats.top_domains) {
 
-            if (domain.length() > 35) {
-                domain =
-                    domain.substr(0, 32)
-                    + "...";
-            }
-
-            ss << "║ "
-               << std::setw(40)
-               << std::left
-               << domain
-               << std::setw(10)
-               << std::right
-               << pair.second
-               << "           ║\n";
-        }
+        ss << std::left
+           << std::setw(40)
+           << entry.first
+           << " : "
+           << entry.second
+           << "\n";
     }
 
-    ss << "╚══════════════════════════════════════════════════════════════╝\n";
+    ss << "============================================================\n";
 
     return ss.str();
 }
-
-} // namespace DPI
