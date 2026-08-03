@@ -426,12 +426,6 @@ void DPIEngine::readerThreadFunc(
         // --------------------------------------------------------
         // Send packet ONLY to Load Balancer.
         //
-        // IMPORTANT:
-        // The packet must NOT be pushed directly to the output
-        // queue here.
-        //
-        // The path is:
-        //
         // Reader -> LB -> FastPath -> RuleManager
         //                          |
         //                     DROP / ACCEPT
@@ -826,6 +820,38 @@ void DPIEngine::unblockDomain(
     rule_manager_->unblockDomain(domain);
 }
 
+// ============================================================================
+// Port Blocking
+// ============================================================================
+
+void DPIEngine::blockPort(
+    uint16_t port
+) {
+
+    if (!rule_manager_) {
+
+        if (!initialize()) {
+            return;
+        }
+    }
+
+    rule_manager_->blockPort(port);
+}
+
+void DPIEngine::unblockPort(
+    uint16_t port
+) {
+
+    if (!rule_manager_) {
+
+        if (!initialize()) {
+            return;
+        }
+    }
+
+    rule_manager_->unblockPort(port);
+}
+
 bool DPIEngine::loadRules(
     const std::string& filename
 ) {
@@ -914,9 +940,6 @@ std::string DPIEngine::generateReport() const {
 
     // ------------------------------------------------------------
     // Forwarded packets
-    //
-    // These are packets that actually reached the output queue
-    // and were written to the output PCAP.
     // ------------------------------------------------------------
 
     ss
@@ -926,9 +949,6 @@ std::string DPIEngine::generateReport() const {
 
     // ------------------------------------------------------------
     // Dropped packets
-    //
-    // FastPath owns this statistic because FastPath performs
-    // the actual RuleManager check.
     // ------------------------------------------------------------
 
     ss
@@ -989,8 +1009,7 @@ std::string DPIEngine::generateReport() const {
             << "\n";
 
         ss
-            << "  Active connections:"
-            << " "
+            << "  Active connections: "
             << fp_stats.total_active_connections
             << "\n";
     }
@@ -1026,12 +1045,6 @@ std::string DPIEngine::generateReport() const {
 
 // ============================================================================
 // Classification Report
-// ============================================================================
-//
-// The current FastPath implementation does not perform application/SNI
-// classification yet. Therefore this method reports that classification
-// is not available in the current pipeline stage.
-//
 // ============================================================================
 
 std::string DPIEngine::generateClassificationReport() const {

@@ -1,11 +1,88 @@
 #include "rule_manager.h"
 
 #include <algorithm>
+#include <cctype>
+#include <fstream>
 #include <iostream>
 #include <mutex>
 #include <sstream>
 
 namespace DPI {
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+namespace {
+
+std::string normalizeDomain(const std::string& domain) {
+    std::string result = domain;
+
+    while (!result.empty() &&
+           (result.back() == '.' || result.back() == ' ')) {
+        result.pop_back();
+    }
+
+    std::transform(
+        result.begin(),
+        result.end(),
+        result.begin(),
+        [](unsigned char c) {
+            return static_cast<char>(std::tolower(c));
+        }
+    );
+
+    return result;
+}
+
+bool domainMatchesBaseDomain(
+    const std::string& domain,
+    const std::string& base
+) {
+    const std::string normalizedDomain =
+        normalizeDomain(domain);
+
+    const std::string normalizedBase =
+        normalizeDomain(base);
+
+    if (normalizedDomain.empty() ||
+        normalizedBase.empty()) {
+        return false;
+    }
+
+    // Exact match.
+    if (normalizedDomain == normalizedBase) {
+        return true;
+    }
+
+    // Match subdomains.
+    //
+    // Example:
+    //     google.com
+    // matches:
+    //     www.google.com
+    //     mail.google.com
+    //     accounts.google.com
+    //
+    // But does NOT match:
+    //     notgoogle.com
+    //
+    const std::string suffix =
+        "." + normalizedBase;
+
+    if (normalizedDomain.size() > suffix.size() &&
+        normalizedDomain.compare(
+            normalizedDomain.size() - suffix.size(),
+            suffix.size(),
+            suffix
+        ) == 0) {
+        return true;
+    }
+
+    return false;
+}
+
+} // namespace
 
 // ============================================================================
 // IP Blocking
@@ -188,16 +265,19 @@ RuleManager::getBlockedApps() const {
 void RuleManager::blockDomain(
     const std::string& domain
 ) {
+    const std::string normalized =
+        normalizeDomain(domain);
+
     std::unique_lock<std::shared_mutex>
         lock(domain_mutex_);
 
-    if (domain.find('*') != std::string::npos) {
+    if (normalized.find('*') != std::string::npos) {
 
-        domain_patterns_.push_back(domain);
+        domain_patterns_.push_back(normalized);
 
     } else {
 
-        blocked_domains_.insert(domain);
+        blocked_domains_.insert(normalized);
     }
 
     std::cout
@@ -209,16 +289,19 @@ void RuleManager::blockDomain(
 void RuleManager::unblockDomain(
     const std::string& domain
 ) {
+    const std::string normalized =
+        normalizeDomain(domain);
+
     std::unique_lock<std::shared_mutex>
         lock(domain_mutex_);
 
-    if (domain.find('*') != std::string::npos) {
+    if (normalized.find('*') != std::string::npos) {
 
         auto it =
             std::find(
                 domain_patterns_.begin(),
                 domain_patterns_.end(),
-                domain
+                normalized
             );
 
         if (it != domain_patterns_.end()) {
@@ -227,7 +310,7 @@ void RuleManager::unblockDomain(
 
     } else {
 
-        blocked_domains_.erase(domain);
+        blocked_domains_.erase(normalized);
     }
 
     std::cout
@@ -240,23 +323,33 @@ bool RuleManager::domainMatchesPattern(
     const std::string& domain,
     const std::string& pattern
 ) {
-    // Supports patterns such as:
+    const std::string normalizedDomain =
+        normalizeDomain(domain);
+
+    const std::string normalizedPattern =
+        normalizeDomain(pattern);
+
+    // Supports:
     //
-    // *.example.com
+    //     *.example.com
+    //
+    // and also matches:
+    //
+    //     example.com
 
     if (
-        pattern.size() >= 2 &&
-        pattern[0] == '*' &&
-        pattern[1] == '.'
+        normalizedPattern.size() >= 2 &&
+        normalizedPattern[0] == '*' &&
+        normalizedPattern[1] == '.'
     ) {
 
-        std::string suffix =
-            pattern.substr(1);
+        const std::string suffix =
+            normalizedPattern.substr(1);
 
         if (
-            domain.size() >= suffix.size() &&
-            domain.compare(
-                domain.size() - suffix.size(),
+            normalizedDomain.size() >= suffix.size() &&
+            normalizedDomain.compare(
+                normalizedDomain.size() - suffix.size(),
                 suffix.size(),
                 suffix
             ) == 0
@@ -266,8 +359,8 @@ bool RuleManager::domainMatchesPattern(
 
         // Also match bare domain.
         if (
-            domain ==
-            pattern.substr(2)
+            normalizedDomain ==
+            normalizedPattern.substr(2)
         ) {
             return true;
         }
@@ -280,14 +373,52 @@ bool RuleManager::isDomainBlocked(
     const std::string& domain
 ) const {
 
+    const std::string normalizedDomain =
+        normalizeDomain(domain);
+
+    if (normalizedDomain.empty()) {
+        return false;
+    }
+
     std::shared_lock<std::shared_mutex>
         lock(domain_mutex_);
 
-    if (
-        blocked_domains_.count(domain) > 0
+    // ------------------------------------------------------------------------
+    // Exact domain and subdomain matching.
+    //
+    // A rule for:
+    //
+    //     google.com
+    //
+    // blocks:
+    //
+    //     google.com
+    //     www.google.com
+    //     mail.google.com
+    //
+    // but does NOT block:
+    //
+    //     notgoogle.com
+    // ------------------------------------------------------------------------
+
+    for (
+        const auto& blockedDomain :
+        blocked_domains_
     ) {
-        return true;
+
+        if (
+            domainMatchesBaseDomain(
+                normalizedDomain,
+                blockedDomain
+            )
+        ) {
+            return true;
+        }
     }
+
+    // ------------------------------------------------------------------------
+    // Wildcard domain patterns.
+    // ------------------------------------------------------------------------
 
     for (
         const auto& pattern :
@@ -296,7 +427,7 @@ bool RuleManager::isDomainBlocked(
 
         if (
             domainMatchesPattern(
-                domain,
+                normalizedDomain,
                 pattern
             )
         ) {
@@ -385,6 +516,10 @@ RuleManager::shouldBlock(
     const std::string& domain
 ) const {
 
+    // ------------------------------------------------------------------------
+    // IP rule
+    // ------------------------------------------------------------------------
+
     if (isIPBlocked(src_ip)) {
 
         return BlockReason{
@@ -392,6 +527,10 @@ RuleManager::shouldBlock(
             ipToString(src_ip)
         };
     }
+
+    // ------------------------------------------------------------------------
+    // Application rule
+    // ------------------------------------------------------------------------
 
     if (isAppBlocked(app)) {
 
@@ -401,6 +540,10 @@ RuleManager::shouldBlock(
         };
     }
 
+    // ------------------------------------------------------------------------
+    // Domain / SNI rule
+    // ------------------------------------------------------------------------
+
     if (isDomainBlocked(domain)) {
 
         return BlockReason{
@@ -408,6 +551,10 @@ RuleManager::shouldBlock(
             domain
         };
     }
+
+    // ------------------------------------------------------------------------
+    // Destination port rule
+    // ------------------------------------------------------------------------
 
     if (isPortBlocked(dst_port)) {
 
@@ -439,7 +586,10 @@ bool RuleManager::saveRules(
         const auto& ip :
         getBlockedIPs()
     ) {
-        file << "IP " << ip << "\n";
+        file
+            << "IP "
+            << ip
+            << "\n";
     }
 
     // Application rules
@@ -447,6 +597,7 @@ bool RuleManager::saveRules(
         const auto& app :
         getBlockedApps()
     ) {
+
         file
             << "APP "
             << appTypeToString(app)
@@ -458,6 +609,7 @@ bool RuleManager::saveRules(
         const auto& domain :
         getBlockedDomains()
     ) {
+
         file
             << "DOMAIN "
             << domain
@@ -473,6 +625,7 @@ bool RuleManager::saveRules(
             uint16_t port :
             blocked_ports_
         ) {
+
             file
                 << "PORT "
                 << port
@@ -520,6 +673,7 @@ bool RuleManager::loadRules(
                     appTypeToString(app)
                     == value
                 ) {
+
                     blockApp(app);
                     break;
                 }

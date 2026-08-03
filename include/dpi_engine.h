@@ -112,6 +112,14 @@ public:
         const std::string& domain
     );
 
+    void blockPort(
+        uint16_t port
+    );
+
+    void unblockPort(
+        uint16_t port
+    );
+
     bool loadRules(
         const std::string& filename
     );

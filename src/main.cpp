@@ -3,6 +3,7 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <cstdint>
 
 namespace {
 
@@ -10,7 +11,8 @@ void printUsage(const char* program) {
 
     std::cout
         << "\n"
-        << "DPI Engine - Deep Packet Inspection System\n"
+        << "===========================================\n"
+        << "       DPI Engine - Deep Packet Inspection\n"
         << "===========================================\n"
         << "\n"
         << "Usage:\n"
@@ -27,6 +29,9 @@ void printUsage(const char* program) {
         << "  --block-domain <domain>\n"
         << "      Block traffic matching a domain.\n"
         << "\n"
+        << "  --block-port <port>\n"
+        << "      Block traffic matching a TCP/UDP port.\n"
+        << "\n"
         << "  --lbs <n>\n"
         << "      Number of load balancers.\n"
         << "      Default: 2\n"
@@ -41,21 +46,23 @@ void printUsage(const char* program) {
         << "  --help\n"
         << "      Display this help message.\n"
         << "\n"
-        << "Example:\n"
+        << "Examples:\n"
         << "  " << program
         << " capture.pcap filtered.pcap\n"
         << "\n"
-        << "Example with blocking:\n"
         << "  " << program
         << " capture.pcap filtered.pcap"
         << " --block-ip 192.168.1.50"
         << " --block-app YouTube"
-        << " --block-domain facebook\n"
+        << " --block-domain google.com"
+        << " --block-port 443\n"
         << "\n"
-        << "Example with custom pipeline:\n"
         << "  " << program
         << " capture.pcap filtered.pcap"
-        << " --lbs 4 --fps 4\n"
+        << " --lbs 4"
+        << " --fps 4\n"
+        << "\n"
+        << "===========================================\n"
         << std::endl;
 }
 
@@ -63,6 +70,7 @@ bool parsePositiveInteger(
     const std::string& value,
     int& result
 ) {
+
     try {
 
         size_t processed = 0;
@@ -85,6 +93,7 @@ bool parsePositiveInteger(
         return true;
 
     } catch (...) {
+
         return false;
     }
 }
@@ -109,9 +118,12 @@ int main(
 
     for (int i = 1; i < argc; ++i) {
 
+        const std::string argument =
+            argv[i];
+
         if (
-            std::string(argv[i]) == "--help" ||
-            std::string(argv[i]) == "-h"
+            argument == "--help" ||
+            argument == "-h"
         ) {
 
             printUsage(argv[0]);
@@ -149,6 +161,7 @@ int main(
     std::vector<std::string> blocked_ips;
     std::vector<std::string> blocked_apps;
     std::vector<std::string> blocked_domains;
+    std::vector<uint16_t> blocked_ports;
 
     // ============================================================
     // Parse command-line options
@@ -227,6 +240,43 @@ int main(
         }
 
         // --------------------------------------------------------
+        // Block port
+        // --------------------------------------------------------
+
+        if (argument == "--block-port") {
+
+            if (i + 1 >= argc) {
+
+                std::cerr
+                    << "Error: --block-port requires a port number.\n";
+
+                return 1;
+            }
+
+            int port = 0;
+
+            if (
+                !parsePositiveInteger(
+                    argv[++i],
+                    port
+                ) ||
+                port > 65535
+            ) {
+
+                std::cerr
+                    << "Error: invalid port for --block-port.\n";
+
+                return 1;
+            }
+
+            blocked_ports.push_back(
+                static_cast<uint16_t>(port)
+            );
+
+            continue;
+        }
+
+        // --------------------------------------------------------
         // Number of load balancers
         // --------------------------------------------------------
 
@@ -297,7 +347,7 @@ int main(
         }
 
         // --------------------------------------------------------
-        // Verbose mode
+        // Verbose
         // --------------------------------------------------------
 
         if (argument == "--verbose") {
@@ -326,28 +376,29 @@ int main(
     // ============================================================
 
     std::cout
-        << "\n========================================\n"
-        << "DPI Engine\n"
+        << "\n"
         << "========================================\n"
-        << "Input PCAP:  "
+        << "          DPI ENGINE v2.0\n"
+        << "========================================\n"
+        << "Input PCAP:        "
         << input_file
         << "\n"
-        << "Output PCAP: "
+        << "Output PCAP:       "
         << output_file
         << "\n"
-        << "Load balancers: "
+        << "Load Balancers:    "
         << config.num_load_balancers
         << "\n"
-        << "Fast paths per LB: "
+        << "FPs per LB:        "
         << config.fps_per_lb
         << "\n"
-        << "Total fast paths: "
+        << "Total Fast Paths:  "
         << (
             config.num_load_balancers *
             config.fps_per_lb
         )
         << "\n"
-        << "Verbose: "
+        << "Verbose:           "
         << (
             config.verbose
                 ? "enabled"
@@ -366,13 +417,27 @@ int main(
     // Configure blocking rules
     // ============================================================
 
+    if (
+        !blocked_ips.empty() ||
+        !blocked_apps.empty() ||
+        !blocked_domains.empty() ||
+        !blocked_ports.empty()
+    ) {
+
+        std::cout
+            << "\n"
+            << "========================================\n"
+            << "              ACTIVE RULES\n"
+            << "========================================\n";
+    }
+
     for (
         const auto& ip :
         blocked_ips
     ) {
 
         std::cout
-            << "[CLI] Blocking IP: "
+            << "[Rules] Blocked IP: "
             << ip
             << "\n";
 
@@ -385,7 +450,7 @@ int main(
     ) {
 
         std::cout
-            << "[CLI] Blocking application: "
+            << "[Rules] Blocked app: "
             << app
             << "\n";
 
@@ -398,19 +463,44 @@ int main(
     ) {
 
         std::cout
-            << "[CLI] Blocking domain: "
+            << "[Rules] Blocked domain: "
             << domain
             << "\n";
 
         engine.blockDomain(domain);
     }
 
+    for (
+        const auto& port :
+        blocked_ports
+    ) {
+
+        std::cout
+            << "[Rules] Blocked port: "
+            << port
+            << "\n";
+
+        engine.blockPort(port);
+    }
+
+    if (
+        !blocked_ips.empty() ||
+        !blocked_apps.empty() ||
+        !blocked_domains.empty() ||
+        !blocked_ports.empty()
+    ) {
+
+        std::cout
+            << "========================================\n";
+    }
+
     // ============================================================
-    // Process PCAP
+    // Start processing
     // ============================================================
 
     std::cout
-        << "\n[DPI CLI] Starting packet inspection...\n";
+        << "\n"
+        << "[Reader] Processing packets...\n";
 
     const bool success =
         engine.processFile(
@@ -421,20 +511,37 @@ int main(
     if (!success) {
 
         std::cerr
-            << "\n[DPI CLI] Processing failed.\n";
+            << "\n"
+            << "[DPI CLI] Processing failed.\n";
 
         return 1;
     }
+
+    // ============================================================
+    // Processing report
+    // ============================================================
+
+    std::cout
+        << "\n"
+        << "========================================\n"
+        << "          PROCESSING REPORT\n"
+        << "========================================\n";
+
+    std::cout
+        << engine.generateReport();
 
     // ============================================================
     // Final result
     // ============================================================
 
     std::cout
-        << "\n[DPI CLI] Processing completed successfully.\n"
+        << "\n"
+        << "========================================\n"
+        << "[DPI CLI] Processing completed successfully.\n"
         << "[DPI CLI] Output written to: "
         << output_file
-        << "\n";
+        << "\n"
+        << "========================================\n";
 
     return 0;
 }
