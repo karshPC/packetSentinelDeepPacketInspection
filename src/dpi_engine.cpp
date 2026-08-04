@@ -1051,13 +1051,88 @@ std::string DPIEngine::generateClassificationReport() const {
 
     std::ostringstream ss;
 
+    if (!global_conn_table_) {
+        return "\nClassification data unavailable.\n";
+    }
+
+    const auto stats =
+        global_conn_table_->getGlobalStats();
+
     ss
         << "\n"
         << "========================================\n"
-        << "Classification Report\n"
+        << "        APPLICATION CLASSIFICATION\n"
+        << "========================================\n";
+
+    std::vector<
+        std::pair<std::string, size_t>
+    > applications;
+
+    for (const auto& entry :
+         stats.app_distribution) {
+
+        applications.emplace_back(
+            appTypeToString(entry.first),
+            entry.second
+        );
+    }
+
+    std::sort(
+        applications.begin(),
+        applications.end(),
+        [](const auto& a, const auto& b) {
+
+            if (a.second != b.second) {
+                return a.second > b.second;
+            }
+
+            return a.first < b.first;
+        }
+    );
+
+    if (applications.empty()) {
+        ss << "No classified applications.\n";
+    } else {
+        for (const auto& entry :
+             applications) {
+
+            ss
+                << std::left
+                << std::setw(25)
+                << entry.first
+                << " : "
+                << entry.second
+                << "\n";
+        }
+    }
+
+    ss
+        << "\n"
         << "========================================\n"
-        << "Application classification is not yet\n"
-        << "enabled in the current FastPath implementation.\n"
+        << "              TOP DOMAINS\n"
+        << "========================================\n";
+
+    if (stats.top_domains.empty()) {
+        ss << "No domains observed.\n";
+    } else {
+        size_t rank = 1;
+
+        for (const auto& entry :
+             stats.top_domains) {
+
+            ss
+                << std::setw(3)
+                << rank++
+                << ". "
+                << std::setw(40)
+                << entry.first
+                << " : "
+                << entry.second
+                << "\n";
+        }
+    }
+
+    ss
         << "========================================\n";
 
     return ss.str();

@@ -530,6 +530,9 @@ int main(
     std::cout
         << engine.generateReport();
 
+    std::cout
+        << engine.generateClassificationReport();
+
     // ============================================================
     // Final result
     // ============================================================
