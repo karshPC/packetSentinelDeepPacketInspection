@@ -892,153 +892,360 @@ std::string DPIEngine::generateReport() const {
 
     std::ostringstream ss;
 
-    // ------------------------------------------------------------
-    // Get FastPath statistics ONCE.
-    //
-    // FastPath is the authoritative source for:
-    //   - accepted packets
-    //   - dropped packets
-    // ------------------------------------------------------------
-
     FPManager::AggregatedStats fp_stats{};
-
     if (fp_manager_) {
-        fp_stats =
-            fp_manager_->getAggregatedStats();
+        fp_stats = fp_manager_->getAggregatedStats();
     }
+
+    LBManager::AggregatedStats lb_stats{};
+    if (lb_manager_) {
+        lb_stats = lb_manager_->getAggregatedStats();
+    }
+
+    RuleManager::RuleStats rule_stats{};
+    if (rule_manager_) {
+        rule_stats = rule_manager_->getStats();
+    }
+
+    uint64_t packets_read = stats_.total_packets.load();
+    uint64_t bytes_read = stats_.total_bytes.load();
+    uint64_t tcp_packets = stats_.tcp_packets.load();
+    uint64_t udp_packets = stats_.udp_packets.load();
+    uint64_t other_packets = stats_.other_packets.load();
+    uint64_t forwarded_packets = stats_.forwarded_packets.load();
+    uint64_t dropped_packets = fp_stats.total_dropped;
+
+    auto percentage = [](uint64_t part, uint64_t total) -> double {
+        if (total == 0) {
+            return 0.0;
+        }
+
+        return (static_cast<double>(part) * 100.0) /
+               static_cast<double>(total);
+    };
 
     ss
         << "\n"
-        << "========================================\n"
-        << "DPI Engine Report\n"
-        << "========================================\n";
+        << "============================================================\n"
+        << "                    DPI ENGINE REPORT\n"
+        << "============================================================\n";
+
+    // ========================================================================
+    // Packet Summary
+    // ========================================================================
 
     ss
-        << "Packets read:       "
-        << stats_.total_packets.load()
+        << "\n"
+        << "PACKET SUMMARY\n"
+        << "------------------------------------------------------------\n";
+
+    ss
+        << std::left
+        << std::setw(30)
+        << "Packets read"
+        << ": "
+        << packets_read
         << "\n";
 
     ss
-        << "Bytes read:         "
-        << stats_.total_bytes.load()
+        << std::setw(30)
+        << "Bytes read"
+        << ": "
+        << bytes_read
         << "\n";
 
     ss
-        << "TCP packets:        "
-        << stats_.tcp_packets.load()
+        << std::setw(30)
+        << "TCP packets"
+        << ": "
+        << tcp_packets
+        << " ("
+        << std::fixed
+        << std::setprecision(2)
+        << percentage(tcp_packets, packets_read)
+        << "%)\n";
+
+    ss
+        << std::setw(30)
+        << "UDP packets"
+        << ": "
+        << udp_packets
+        << " ("
+        << std::fixed
+        << std::setprecision(2)
+        << percentage(udp_packets, packets_read)
+        << "%)\n";
+
+    ss
+        << std::setw(30)
+        << "Other packets"
+        << ": "
+        << other_packets
+        << " ("
+        << std::fixed
+        << std::setprecision(2)
+        << percentage(other_packets, packets_read)
+        << "%)\n";
+
+    ss
+        << std::setw(30)
+        << "Forwarded packets"
+        << ": "
+        << forwarded_packets
+        << " ("
+        << std::fixed
+        << std::setprecision(2)
+        << percentage(forwarded_packets, packets_read)
+        << "%)\n";
+
+    ss
+        << std::setw(30)
+        << "Dropped packets"
+        << ": "
+        << dropped_packets
+        << " ("
+        << std::fixed
+        << std::setprecision(2)
+        << percentage(dropped_packets, packets_read)
+        << "%)\n";
+
+    // ========================================================================
+    // Pipeline Summary
+    // ========================================================================
+
+    ss
+        << "\n"
+        << "PIPELINE SUMMARY\n"
+        << "------------------------------------------------------------\n";
+
+    ss
+        << std::setw(30)
+        << "Load balancers"
+        << ": "
+        << (lb_manager_ ? lb_manager_->getNumLBs() : 0)
         << "\n";
 
     ss
-        << "UDP packets:        "
-        << stats_.udp_packets.load()
+        << std::setw(30)
+        << "Fast paths"
+        << ": "
+        << (fp_manager_ ? fp_manager_->getNumFPs() : 0)
         << "\n";
 
     ss
-        << "Other packets:      "
-        << stats_.other_packets.load()
+        << std::setw(30)
+        << "LB packets received"
+        << ": "
+        << lb_stats.total_received
         << "\n";
-
-    // ------------------------------------------------------------
-    // Forwarded packets
-    // ------------------------------------------------------------
 
     ss
-        << "Forwarded packets:  "
-        << stats_.forwarded_packets.load()
+        << std::setw(30)
+        << "LB packets dispatched"
+        << ": "
+        << lb_stats.total_dispatched
         << "\n";
-
-    // ------------------------------------------------------------
-    // Dropped packets
-    // ------------------------------------------------------------
 
     ss
-        << "Dropped packets:    "
-        << fp_stats.total_dropped
+        << std::setw(30)
+        << "FP packets processed"
+        << ": "
+        << fp_stats.total_processed
         << "\n";
 
-    // ------------------------------------------------------------
-    // Load Balancer statistics.
-    // ------------------------------------------------------------
+    ss
+        << std::setw(30)
+        << "FP bytes processed"
+        << ": "
+        << fp_stats.total_bytes
+        << "\n";
+
+    // ========================================================================
+    // Load Balancer Details
+    // ========================================================================
 
     if (lb_manager_) {
 
-        auto lb_stats =
-            lb_manager_->getAggregatedStats();
-
         ss
-            << "\nLoad Balancer:\n";
+            << "\n"
+            << "LOAD BALANCER DETAILS\n"
+            << "------------------------------------------------------------\n";
 
-        ss
-            << "  Received:         "
-            << lb_stats.total_received
-            << "\n";
+        for (int i = 0;
+             i < lb_manager_->getNumLBs();
+             ++i) {
 
-        ss
-            << "  Dispatched:       "
-            << lb_stats.total_dispatched
-            << "\n";
+            const auto stats =
+                lb_manager_->getLB(i).getStats();
+
+            ss
+                << "LB"
+                << i
+                << ": received="
+                << stats.packets_received
+                << ", dispatched="
+                << stats.packets_dispatched
+                << "\n";
+
+            for (size_t fp = 0;
+                 fp < stats.per_fp_packets.size();
+                 ++fp) {
+
+                ss
+                    << "  FP"
+                    << (i * static_cast<int>(stats.per_fp_packets.size()) +
+                        static_cast<int>(fp))
+                    << " packets="
+                    << stats.per_fp_packets[fp]
+                    << "\n";
+            }
+        }
     }
 
-    // ------------------------------------------------------------
-    // Fast Path statistics.
-    // ------------------------------------------------------------
+    // ========================================================================
+    // Fast Path Details
+    // ========================================================================
 
     if (fp_manager_) {
 
         ss
-            << "\nFast Paths:\n";
+            << "\n"
+            << "FAST PATH DETAILS\n"
+            << "------------------------------------------------------------\n";
 
-        ss
-            << "  Packets processed: "
-            << fp_stats.total_processed
-            << "\n";
+        for (int i = 0;
+             i < fp_manager_->getNumFPs();
+             ++i) {
 
-        ss
-            << "  Packets dropped:   "
-            << fp_stats.total_dropped
-            << "\n";
+            const auto stats =
+                fp_manager_->getFP(i).getStats();
 
-        ss
-            << "  Bytes processed:   "
-            << fp_stats.total_bytes
-            << "\n";
-
-        ss
-            << "  Connections seen:  "
-            << fp_stats.total_connections
-            << "\n";
-
-        ss
-            << "  Active connections: "
-            << fp_stats.total_active_connections
-            << "\n";
+            ss
+                << "FP"
+                << i
+                << ": processed="
+                << stats.packets_processed
+                << ", dropped="
+                << stats.packets_dropped
+                << ", bytes="
+                << stats.bytes_processed
+                << ", connections="
+                << stats.connections_created
+                << ", active="
+                << stats.active_connections
+                << "\n";
+        }
     }
 
-    // ------------------------------------------------------------
-    // Global connection table.
-    // ------------------------------------------------------------
-
-    if (global_conn_table_) {
-
-        auto global_stats =
-            global_conn_table_->getGlobalStats();
-
-        ss
-            << "\nGlobal Connections:\n";
-
-        ss
-            << "  Active:            "
-            << global_stats.total_active_connections
-            << "\n";
-
-        ss
-            << "  Total seen:        "
-            << global_stats.total_connections_seen
-            << "\n";
-    }
+    // ========================================================================
+    // Connection Summary
+    // ========================================================================
 
     ss
-        << "========================================\n";
+        << "\n"
+        << "CONNECTION SUMMARY\n"
+        << "------------------------------------------------------------\n";
+
+    uint64_t classified_connections = 0;
+    uint64_t blocked_connections = 0;
+
+    if (fp_manager_) {
+
+        for (int i = 0;
+             i < fp_manager_->getNumFPs();
+             ++i) {
+
+            const auto tracker_stats =
+                fp_manager_->getFP(i)
+                    .getConnectionTracker()
+                    .getStats();
+
+            classified_connections +=
+                tracker_stats.classified_connections;
+
+            blocked_connections +=
+                tracker_stats.blocked_connections;
+        }
+    }
+
+    size_t active_connections =
+        global_conn_table_
+            ? global_conn_table_->getGlobalStats().total_active_connections
+            : 0;
+
+    size_t total_connections_seen =
+        global_conn_table_
+            ? global_conn_table_->getGlobalStats().total_connections_seen
+            : 0;
+
+    ss
+        << std::setw(30)
+        << "Total connections seen"
+        << ": "
+        << total_connections_seen
+        << "\n";
+
+    ss
+        << std::setw(30)
+        << "Active connections"
+        << ": "
+        << active_connections
+        << "\n";
+
+    ss
+        << std::setw(30)
+        << "Classified connections"
+        << ": "
+        << classified_connections
+        << "\n";
+
+    ss
+        << std::setw(30)
+        << "Blocked connections"
+        << ": "
+        << blocked_connections
+        << "\n";
+
+    // ========================================================================
+    // Rule Summary
+    // ========================================================================
+
+    ss
+        << "\n"
+        << "RULE SUMMARY\n"
+        << "------------------------------------------------------------\n";
+
+    ss
+        << std::setw(30)
+        << "Blocked IP rules"
+        << ": "
+        << rule_stats.blocked_ips
+        << "\n";
+
+    ss
+        << std::setw(30)
+        << "Blocked application rules"
+        << ": "
+        << rule_stats.blocked_apps
+        << "\n";
+
+    ss
+        << std::setw(30)
+        << "Blocked domain rules"
+        << ": "
+        << rule_stats.blocked_domains
+        << "\n";
+
+    ss
+        << std::setw(30)
+        << "Blocked port rules"
+        << ": "
+        << rule_stats.blocked_ports
+        << "\n";
+
+    ss
+        << "\n"
+        << "============================================================\n";
 
     return ss.str();
 }
@@ -1046,6 +1253,7 @@ std::string DPIEngine::generateReport() const {
 // ============================================================================
 // Classification Report
 // ============================================================================
+
 
 std::string DPIEngine::generateClassificationReport() const {
 
