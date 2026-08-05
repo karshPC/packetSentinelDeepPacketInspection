@@ -385,69 +385,89 @@ bool FastPath::shouldDrop(
     }
 
     // ------------------------------------------------------------------------
-    // Evaluate all rule types through RuleManager.
+    // IP rule
     // ------------------------------------------------------------------------
 
-    const auto reason =
-        rule_manager_->shouldBlock(
-            job.tuple.src_ip,
-            job.tuple.dst_port,
-            app,
+    if (
+        rule_manager_->isIPBlocked(
+            job.tuple.src_ip
+        )
+    ) {
+
+        std::cout
+            << "[FP"
+            << fp_id_
+            << "] Dropping packet"
+            << " - IP"
+            << "\n";
+
+        return true;
+    }
+
+    // ------------------------------------------------------------------------
+    // Application rule
+    // ------------------------------------------------------------------------
+
+    if (
+        rule_manager_->isAppBlocked(
+            app
+        )
+    ) {
+
+        std::cout
+            << "[FP"
+            << fp_id_
+            << "] Dropping packet"
+            << " - App"
+            << "\n";
+
+        return true;
+    }
+
+    // ------------------------------------------------------------------------
+    // Domain / SNI rule
+    // ------------------------------------------------------------------------
+
+    if (
+        !domain.empty() &&
+        rule_manager_->isDomainBlocked(
             domain
-        );
+        )
+    ) {
 
-    if (!reason.has_value()) {
-        return false;
+        std::cout
+            << "[FP"
+            << fp_id_
+            << "] Dropping packet"
+            << " - Domain: "
+            << domain
+            << "\n";
+
+        return true;
     }
 
     // ------------------------------------------------------------------------
-    // Verbose diagnostic.
+    // Destination port rule
     // ------------------------------------------------------------------------
 
-    std::cout
-        << "[FP"
-        << fp_id_
-        << "] Dropping packet";
+    if (
+        rule_manager_->isPortBlocked(
+            job.tuple.dst_port
+        )
+    ) {
 
-    switch (reason->type) {
+        std::cout
+            << "[FP"
+            << fp_id_
+            << "] Dropping packet"
+            << " - Port: "
+            << job.tuple.dst_port
+            << "\n";
 
-        case RuleManager::BlockReason::IP:
-
-            std::cout
-                << " - IP: "
-                << reason->detail;
-
-            break;
-
-        case RuleManager::BlockReason::APP:
-
-            std::cout
-                << " - App: "
-                << reason->detail;
-
-            break;
-
-        case RuleManager::BlockReason::DOMAIN_RULE:
-
-            std::cout
-                << " - Domain: "
-                << reason->detail;
-
-            break;
-
-        case RuleManager::BlockReason::PORT:
-
-            std::cout
-                << " - Port: "
-                << reason->detail;
-
-            break;
+        return true;
     }
 
-    std::cout
-        << "\n";
-
-    return true;
+    return false;
 }
 
 // ============================================================================

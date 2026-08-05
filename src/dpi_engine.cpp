@@ -5,6 +5,9 @@
 #include <iomanip>
 #include <chrono>
 #include <thread>
+#include <algorithm>
+#include <vector>
+#include <string>
 
 namespace DPI {
 
@@ -888,6 +891,69 @@ bool DPIEngine::saveRules(
 // Statistics Report
 // ============================================================================
 
+namespace {
+
+constexpr size_t REPORT_WIDTH = 60;
+
+std::string reportBorder(
+    const std::string& left,
+    const std::string& fill,
+    const std::string& right
+) {
+    std::string line = left;
+
+    for (size_t i = 0; i < REPORT_WIDTH; ++i) {
+        line += fill;
+    }
+
+    line += right;
+    line += "\n";
+
+    return line;
+}
+
+std::string reportRow(const std::string& content) {
+    std::string row = content;
+
+    if (row.size() > REPORT_WIDTH) {
+        row.resize(REPORT_WIDTH);
+    } else if (row.size() < REPORT_WIDTH) {
+        row.append(REPORT_WIDTH - row.size(), ' ');
+    }
+
+    return "║" + row + "║\n";
+}
+
+std::string reportCentered(const std::string& content) {
+    if (content.size() >= REPORT_WIDTH) {
+        return reportRow(content.substr(0, REPORT_WIDTH));
+    }
+
+    const size_t total_padding = REPORT_WIDTH - content.size();
+    const size_t left_padding = total_padding / 2;
+    const size_t right_padding = total_padding - left_padding;
+
+    return "║" +
+           std::string(left_padding, ' ') +
+           content +
+           std::string(right_padding, ' ') +
+           "║\n";
+}
+
+std::string reportLabelValue(const std::string& label,
+                             uint64_t value) {
+    std::ostringstream line;
+    line << "  " << std::left << std::setw(29) << label
+         << value;
+    return line.str();
+}
+
+} // namespace
+
+// ============================================================================
+// Statistics Report
+// ============================================================================
+
 std::string DPIEngine::generateReport() const {
 
     std::ostringstream ss;
@@ -907,254 +973,251 @@ std::string DPIEngine::generateReport() const {
         rule_stats = rule_manager_->getStats();
     }
 
-    uint64_t packets_read = stats_.total_packets.load();
-    uint64_t bytes_read = stats_.total_bytes.load();
-    uint64_t tcp_packets = stats_.tcp_packets.load();
-    uint64_t udp_packets = stats_.udp_packets.load();
-    uint64_t other_packets = stats_.other_packets.load();
-    uint64_t forwarded_packets = stats_.forwarded_packets.load();
-    uint64_t dropped_packets = fp_stats.total_dropped;
+    const uint64_t packets_read = stats_.total_packets.load();
+    const uint64_t bytes_read = stats_.total_bytes.load();
+    const uint64_t tcp_packets = stats_.tcp_packets.load();
+    const uint64_t udp_packets = stats_.udp_packets.load();
+    const uint64_t other_packets = stats_.other_packets.load();
+    const uint64_t forwarded_packets = stats_.forwarded_packets.load();
+    const uint64_t dropped_packets = fp_stats.total_dropped;
 
     auto percentage = [](uint64_t part, uint64_t total) -> double {
         if (total == 0) {
             return 0.0;
         }
-
         return (static_cast<double>(part) * 100.0) /
                static_cast<double>(total);
     };
 
-    ss
-        << "\n"
-        << "============================================================\n"
-        << "                    DPI ENGINE REPORT\n"
-        << "============================================================\n";
+    // ------------------------------------------------------------------------
+    // Header
+    // ------------------------------------------------------------------------
 
-    // ========================================================================
-    // Packet Summary
-    // ========================================================================
+    ss << "\n"
+       << reportBorder("╔", "═", "╗")
+       << reportCentered("DPI ENGINE v2.0 (Multi-threaded)")
+       << reportBorder("╠", "═", "╣");
 
-    ss
-        << "\n"
-        << "PACKET SUMMARY\n"
-        << "------------------------------------------------------------\n";
+    {
+        std::ostringstream line;
+        line << "  Load Balancers: " << std::left << std::setw(4)
+             << (lb_manager_ ? lb_manager_->getNumLBs() : 0)
+             << "  FPs per LB: " << std::setw(4)
+             << config_.fps_per_lb
+             << "  Total FPs: "
+             << (fp_manager_ ? fp_manager_->getNumFPs() : 0);
+        ss << reportRow(line.str());
+    }
 
-    ss
-        << std::left
-        << std::setw(30)
-        << "Packets read"
-        << ": "
-        << packets_read
-        << "\n";
+    ss << reportBorder("╚", "═", "╝");
 
-    ss
-        << std::setw(30)
-        << "Bytes read"
-        << ": "
-        << bytes_read
-        << "\n";
+    // ------------------------------------------------------------------------
+    // Active rules
+    // ------------------------------------------------------------------------
 
-    ss
-        << std::setw(30)
-        << "TCP packets"
-        << ": "
-        << tcp_packets
-        << " ("
-        << std::fixed
-        << std::setprecision(2)
-        << percentage(tcp_packets, packets_read)
-        << "%)\n";
+    ss << "\n"
+       << reportBorder("╔", "═", "╗")
+       << reportCentered("ACTIVE RULES")
+       << reportBorder("╠", "═", "╣");
 
-    ss
-        << std::setw(30)
-        << "UDP packets"
-        << ": "
-        << udp_packets
-        << " ("
-        << std::fixed
-        << std::setprecision(2)
-        << percentage(udp_packets, packets_read)
-        << "%)\n";
+    if (rule_manager_) {
+        std::ostringstream line;
+        line << "  IP rules: " << rule_stats.blocked_ips
+             << "   App rules: " << rule_stats.blocked_apps
+             << "   Domain rules: " << rule_stats.blocked_domains
+             << "   Port rules: " << rule_stats.blocked_ports;
+        ss << reportRow(line.str());
+    } else {
+        ss << reportRow("  No rule manager initialized.");
+    }
 
-    ss
-        << std::setw(30)
-        << "Other packets"
-        << ": "
-        << other_packets
-        << " ("
-        << std::fixed
-        << std::setprecision(2)
-        << percentage(other_packets, packets_read)
-        << "%)\n";
+    ss << reportBorder("╚", "═", "╝");
 
-    ss
-        << std::setw(30)
-        << "Forwarded packets"
-        << ": "
-        << forwarded_packets
-        << " ("
-        << std::fixed
-        << std::setprecision(2)
-        << percentage(forwarded_packets, packets_read)
-        << "%)\n";
+    // ------------------------------------------------------------------------
+    // Processing report
+    // ------------------------------------------------------------------------
 
-    ss
-        << std::setw(30)
-        << "Dropped packets"
-        << ": "
-        << dropped_packets
-        << " ("
-        << std::fixed
-        << std::setprecision(2)
-        << percentage(dropped_packets, packets_read)
-        << "%)\n";
+    ss << "\n"
+       << reportBorder("╔", "═", "╗")
+       << reportCentered("PROCESSING REPORT")
+       << reportBorder("╠", "═", "╣");
 
-    // ========================================================================
-    // Pipeline Summary
-    // ========================================================================
+    ss << reportRow(reportLabelValue("Total Packets:", packets_read));
+    ss << reportRow(reportLabelValue("Total Bytes:", bytes_read));
+    ss << reportRow(reportLabelValue("TCP Packets:", tcp_packets));
+    ss << reportRow(reportLabelValue("UDP Packets:", udp_packets));
+    ss << reportRow(reportLabelValue("Other Packets:", other_packets));
+    ss << reportBorder("╠", "═", "╣");
+    ss << reportRow(reportLabelValue("Forwarded:", forwarded_packets));
+    ss << reportRow(reportLabelValue("Dropped:", dropped_packets));
 
-    ss
-        << "\n"
-        << "PIPELINE SUMMARY\n"
-        << "------------------------------------------------------------\n";
+    {
+        std::ostringstream line;
+        line << "  Forward Rate: " << std::fixed << std::setprecision(1)
+             << percentage(forwarded_packets, packets_read) << "%";
+        ss << reportRow(line.str());
+    }
 
-    ss
-        << std::setw(30)
-        << "Load balancers"
-        << ": "
-        << (lb_manager_ ? lb_manager_->getNumLBs() : 0)
-        << "\n";
+    {
+        std::ostringstream line;
+        line << "  Drop Rate: " << std::fixed << std::setprecision(1)
+             << percentage(dropped_packets, packets_read) << "%";
+        ss << reportRow(line.str());
+    }
 
-    ss
-        << std::setw(30)
-        << "Fast paths"
-        << ": "
-        << (fp_manager_ ? fp_manager_->getNumFPs() : 0)
-        << "\n";
+    ss << reportBorder("╠", "═", "╣");
 
-    ss
-        << std::setw(30)
-        << "LB packets received"
-        << ": "
-        << lb_stats.total_received
-        << "\n";
+    // ------------------------------------------------------------------------
+    // Thread statistics
+    // ------------------------------------------------------------------------
 
-    ss
-        << std::setw(30)
-        << "LB packets dispatched"
-        << ": "
-        << lb_stats.total_dispatched
-        << "\n";
-
-    ss
-        << std::setw(30)
-        << "FP packets processed"
-        << ": "
-        << fp_stats.total_processed
-        << "\n";
-
-    ss
-        << std::setw(30)
-        << "FP bytes processed"
-        << ": "
-        << fp_stats.total_bytes
-        << "\n";
-
-    // ========================================================================
-    // Load Balancer Details
-    // ========================================================================
+    ss << reportCentered("THREAD STATISTICS")
+       << reportBorder("╠", "═", "╣");
 
     if (lb_manager_) {
+        for (int i = 0; i < lb_manager_->getNumLBs(); ++i) {
+            const auto lb = lb_manager_->getLB(i).getStats();
 
-        ss
-            << "\n"
-            << "LOAD BALANCER DETAILS\n"
-            << "------------------------------------------------------------\n";
-
-        for (int i = 0;
-             i < lb_manager_->getNumLBs();
-             ++i) {
-
-            const auto stats =
-                lb_manager_->getLB(i).getStats();
-
-            ss
-                << "LB"
-                << i
-                << ": received="
-                << stats.packets_received
-                << ", dispatched="
-                << stats.packets_dispatched
-                << "\n";
-
-            for (size_t fp = 0;
-                 fp < stats.per_fp_packets.size();
-                 ++fp) {
-
-                ss
-                    << "  FP"
-                    << (i * static_cast<int>(stats.per_fp_packets.size()) +
-                        static_cast<int>(fp))
-                    << " packets="
-                    << stats.per_fp_packets[fp]
-                    << "\n";
-            }
+            std::ostringstream line;
+            line << "  LB" << i << " dispatched:"
+                 << std::right << std::setw(24)
+                 << lb.packets_dispatched;
+            ss << reportRow(line.str());
         }
     }
-
-    // ========================================================================
-    // Fast Path Details
-    // ========================================================================
 
     if (fp_manager_) {
+        for (int i = 0; i < fp_manager_->getNumFPs(); ++i) {
+            const auto fp = fp_manager_->getFP(i).getStats();
 
-        ss
-            << "\n"
-            << "FAST PATH DETAILS\n"
-            << "------------------------------------------------------------\n";
-
-        for (int i = 0;
-             i < fp_manager_->getNumFPs();
-             ++i) {
-
-            const auto stats =
-                fp_manager_->getFP(i).getStats();
-
-            ss
-                << "FP"
-                << i
-                << ": processed="
-                << stats.packets_processed
-                << ", dropped="
-                << stats.packets_dropped
-                << ", bytes="
-                << stats.bytes_processed
-                << ", connections="
-                << stats.connections_created
-                << ", active="
-                << stats.active_connections
-                << "\n";
+            std::ostringstream line;
+            line << "  FP" << i << " processed:"
+                 << std::right << std::setw(25)
+                 << fp.packets_processed;
+            ss << reportRow(line.str());
         }
     }
 
-    // ========================================================================
-    // Connection Summary
-    // ========================================================================
+    ss << reportBorder("╚", "═", "╝");
 
-    ss
-        << "\n"
-        << "CONNECTION SUMMARY\n"
-        << "------------------------------------------------------------\n";
+    // ------------------------------------------------------------------------
+    // Application breakdown
+    // ------------------------------------------------------------------------
+
+    ss << "\n"
+       << reportBorder("╔", "═", "╗")
+       << reportCentered("APPLICATION BREAKDOWN")
+       << reportBorder("╠", "═", "╣");
+
+    if (global_conn_table_) {
+        const auto global_stats =
+            global_conn_table_->getGlobalStats();
+
+        std::vector<std::pair<std::string, size_t>> applications;
+        applications.reserve(global_stats.app_distribution.size());
+
+        for (const auto& entry : global_stats.app_distribution) {
+            applications.emplace_back(
+                appTypeToString(entry.first),
+                entry.second
+            );
+        }
+
+        std::sort(
+            applications.begin(),
+            applications.end(),
+            [](const auto& a, const auto& b) {
+                if (a.second != b.second) {
+                    return a.second > b.second;
+                }
+                return a.first < b.first;
+            }
+        );
+
+        const size_t display_count =
+            std::min<size_t>(applications.size(), 8);
+
+        const size_t total_classified =
+            global_stats.total_connections_seen;
+
+        for (size_t i = 0; i < display_count; ++i) {
+            const auto& entry = applications[i];
+
+            std::ostringstream line;
+            line << "  " << std::left << std::setw(20)
+                 << entry.first
+                 << std::right << std::setw(6)
+                 << entry.second
+                 << "  " << std::fixed << std::setprecision(1)
+                 << percentage(entry.second, total_classified)
+                 << "%  ";
+
+            const size_t bar_length =
+                total_classified == 0
+                    ? 0
+                    : static_cast<size_t>(
+                          (static_cast<double>(entry.second) /
+                           static_cast<double>(total_classified)) * 20.0
+                      );
+
+            line << std::string(bar_length, '#');
+
+            ss << reportRow(line.str());
+        }
+
+        if (applications.size() > display_count) {
+            ss << reportRow("  ...");
+        }
+    } else {
+        ss << reportRow("  Classification data unavailable.");
+    }
+
+    ss << reportBorder("╚", "═", "╝");
+
+    // ------------------------------------------------------------------------
+    // Detected domains / SNI
+    // ------------------------------------------------------------------------
+
+    ss << "\n"
+       << "[DETECTED DOMAINS / SNI]\n\n";
+
+    if (global_conn_table_) {
+        const auto global_stats =
+            global_conn_table_->getGlobalStats();
+
+        size_t displayed = 0;
+        for (const auto& entry : global_stats.top_domains) {
+            ss << "  - " << entry.first
+               << " -> " << entry.second << "\n";
+
+            if (++displayed >= 10) {
+                break;
+            }
+        }
+
+        if (displayed == 0) {
+            ss << "  - None detected\n";
+        } else if (global_stats.top_domains.size() > displayed) {
+            ss << "  ...\n";
+        }
+    } else {
+        ss << "  - Classification data unavailable\n";
+    }
+
+    // ------------------------------------------------------------------------
+    // Connection summary
+    // ------------------------------------------------------------------------
+
+    ss << "\n"
+       << reportBorder("╔", "═", "╗")
+       << reportCentered("CONNECTION SUMMARY")
+       << reportBorder("╠", "═", "╣");
 
     uint64_t classified_connections = 0;
     uint64_t blocked_connections = 0;
 
     if (fp_manager_) {
-
-        for (int i = 0;
-             i < fp_manager_->getNumFPs();
-             ++i) {
-
+        for (int i = 0; i < fp_manager_->getNumFPs(); ++i) {
             const auto tracker_stats =
                 fp_manager_->getFP(i)
                     .getConnectionTracker()
@@ -1162,90 +1225,43 @@ std::string DPIEngine::generateReport() const {
 
             classified_connections +=
                 tracker_stats.classified_connections;
-
             blocked_connections +=
                 tracker_stats.blocked_connections;
         }
     }
 
-    size_t active_connections =
+    const size_t active_connections =
         global_conn_table_
             ? global_conn_table_->getGlobalStats().total_active_connections
             : 0;
 
-    size_t total_connections_seen =
+    const size_t total_connections_seen =
         global_conn_table_
             ? global_conn_table_->getGlobalStats().total_connections_seen
             : 0;
 
-    ss
-        << std::setw(30)
-        << "Total connections seen"
-        << ": "
-        << total_connections_seen
-        << "\n";
+    ss << reportRow(reportLabelValue("Total Connections Seen:", total_connections_seen));
+    ss << reportRow(reportLabelValue("Active Connections:", active_connections));
+    ss << reportRow(reportLabelValue("Classified Connections:", classified_connections));
+    ss << reportRow(reportLabelValue("Blocked Connections:", blocked_connections));
 
-    ss
-        << std::setw(30)
-        << "Active connections"
-        << ": "
-        << active_connections
-        << "\n";
+    ss << reportBorder("╚", "═", "╝");
 
-    ss
-        << std::setw(30)
-        << "Classified connections"
-        << ": "
-        << classified_connections
-        << "\n";
+    // ------------------------------------------------------------------------
+    // Rule summary
+    // ------------------------------------------------------------------------
 
-    ss
-        << std::setw(30)
-        << "Blocked connections"
-        << ": "
-        << blocked_connections
-        << "\n";
+    ss << "\n"
+       << reportBorder("╔", "═", "╗")
+       << reportCentered("RULE SUMMARY")
+       << reportBorder("╠", "═", "╣");
 
-    // ========================================================================
-    // Rule Summary
-    // ========================================================================
+    ss << reportRow(reportLabelValue("Blocked IP Rules:", rule_stats.blocked_ips));
+    ss << reportRow(reportLabelValue("Blocked App Rules:", rule_stats.blocked_apps));
+    ss << reportRow(reportLabelValue("Blocked Domain Rules:", rule_stats.blocked_domains));
+    ss << reportRow(reportLabelValue("Blocked Port Rules:", rule_stats.blocked_ports));
 
-    ss
-        << "\n"
-        << "RULE SUMMARY\n"
-        << "------------------------------------------------------------\n";
-
-    ss
-        << std::setw(30)
-        << "Blocked IP rules"
-        << ": "
-        << rule_stats.blocked_ips
-        << "\n";
-
-    ss
-        << std::setw(30)
-        << "Blocked application rules"
-        << ": "
-        << rule_stats.blocked_apps
-        << "\n";
-
-    ss
-        << std::setw(30)
-        << "Blocked domain rules"
-        << ": "
-        << rule_stats.blocked_domains
-        << "\n";
-
-    ss
-        << std::setw(30)
-        << "Blocked port rules"
-        << ": "
-        << rule_stats.blocked_ports
-        << "\n";
-
-    ss
-        << "\n"
-        << "============================================================\n";
+    ss << reportBorder("╚", "═", "╝");
 
     return ss.str();
 }
@@ -1254,96 +1270,15 @@ std::string DPIEngine::generateReport() const {
 // Classification Report
 // ============================================================================
 
-
 std::string DPIEngine::generateClassificationReport() const {
 
-    std::ostringstream ss;
-
+    // Classification is now included in generateReport().
+    // Keep this public API for compatibility with the existing CLI/tests.
     if (!global_conn_table_) {
         return "\nClassification data unavailable.\n";
     }
 
-    const auto stats =
-        global_conn_table_->getGlobalStats();
-
-    ss
-        << "\n"
-        << "========================================\n"
-        << "        APPLICATION CLASSIFICATION\n"
-        << "========================================\n";
-
-    std::vector<
-        std::pair<std::string, size_t>
-    > applications;
-
-    for (const auto& entry :
-         stats.app_distribution) {
-
-        applications.emplace_back(
-            appTypeToString(entry.first),
-            entry.second
-        );
-    }
-
-    std::sort(
-        applications.begin(),
-        applications.end(),
-        [](const auto& a, const auto& b) {
-
-            if (a.second != b.second) {
-                return a.second > b.second;
-            }
-
-            return a.first < b.first;
-        }
-    );
-
-    if (applications.empty()) {
-        ss << "No classified applications.\n";
-    } else {
-        for (const auto& entry :
-             applications) {
-
-            ss
-                << std::left
-                << std::setw(25)
-                << entry.first
-                << " : "
-                << entry.second
-                << "\n";
-        }
-    }
-
-    ss
-        << "\n"
-        << "========================================\n"
-        << "              TOP DOMAINS\n"
-        << "========================================\n";
-
-    if (stats.top_domains.empty()) {
-        ss << "No domains observed.\n";
-    } else {
-        size_t rank = 1;
-
-        for (const auto& entry :
-             stats.top_domains) {
-
-            ss
-                << std::setw(3)
-                << rank++
-                << ". "
-                << std::setw(40)
-                << entry.first
-                << " : "
-                << entry.second
-                << "\n";
-        }
-    }
-
-    ss
-        << "========================================\n";
-
-    return ss.str();
+    return "";
 }
 
 // ============================================================================
